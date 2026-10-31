@@ -7,3 +7,4 @@ node_modules/
 .npm-cache/
 dist/
 server.legacy.js
+.reasonix/
