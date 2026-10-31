@@ -217,7 +217,21 @@ function renderMenu(){
  }
 }
 $('#menuButton').onclick=()=>{if($('#menuPanel').hidden){renderMenu();$('#menuPanel').hidden=false;$('#menuButton').setAttribute('aria-expanded','true')}else closeMenu()};
-document.addEventListener('pointerdown',e=>{if(!e.target.closest('#menuPanel,#menuButton'))closeMenu()});$('#accountAction').onclick=async()=>{if(!connected)openLogin();else{try{await api('/logout',{});location.reload()}catch(e){toast(e.message)}}};$('#closeLogin').onclick=()=>$('#login').close();
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('#menuPanel,#menuButton'))closeMenu()});
+// 触摸设备：列表向下滚动几项后隐藏顶栏，上滚接近顶部时呼出
+if(matchMedia('(pointer: coarse)').matches){
+ const topBar=document.querySelector('aside header');
+ let lastY=0;
+ const applyTopBar=()=>{
+  const y=watchDocumentScroll()?(window.scrollY||0):($('#dialogs').scrollTop||0);
+  const dy=y-lastY;
+  if(dy>0&&y>120)topBar.classList.add('hide');
+  else if(dy<0&&y<60)topBar.classList.remove('hide');
+  lastY=y;
+ };
+ $('#dialogs').addEventListener('scroll',applyTopBar,{passive:true});
+ window.addEventListener('scroll',applyTopBar,{passive:true});
+}$('#accountAction').onclick=async()=>{if(!connected)openLogin();else{try{await api('/logout',{});location.reload()}catch(e){toast(e.message)}}};$('#closeLogin').onclick=()=>$('#login').close();
 $('#authForm').onsubmit=async e=>{e.preventDefault();const b=$('#authSubmit');b.disabled=true;$('#authError').textContent='';try{const value=$('#authInput').value.trim();if(phase==='phone'){await telegram.configure($('#apiId').value.trim(),$('#apiHash').value.trim(),$('#remember').checked);const data=await api('/auth/code',{phone:value.replace(/\s/g,'')});phase='code';$('#credentials').hidden=true;$('#authLabel').textContent='登录验证码';$('#authHint').textContent=data.viaApp?'请查看 Telegram 官方会话中的验证码。':'请查看 Telegram 或短信中的验证码。';$('#authInput').value='';$('#authInput').type='text';$('#authInput').placeholder='输入验证码';b.textContent='登录'}else{const result=await api('/auth/login',phase==='password'?{password:$('#authInput').value}:{code:value});if(result.passwordRequired){phase='password';$('#authLabel').textContent='两步验证密码';$('#authHint').textContent='你的账号开启了两步验证，请输入密码。';$('#authInput').value='';$('#authInput').type='password';$('#authInput').placeholder='输入两步验证密码'}else{await loadReal();$('#login').close()}}}catch(e){$('#authError').textContent=e.message}finally{b.disabled=false}};
 async function loadReal(){
  const cached=await snapshotGet('dialogs');connected=true;document.body.classList.add('connected');$('#mode').textContent='已连接';$('#accountAction').textContent='退出';
