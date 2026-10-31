@@ -108,3 +108,6 @@ body.info-open main>:not(#conversationInfo){display:none!important}#conversation
 }
 
 #chatStatus:empty{display:none}
+
+/* Fixed visual mask only: document scrolling, layout and input stay intact. */
+#roundScreenPreview{position:fixed;z-index:2147483647;left:50%;top:50%;width:min(100%,100dvh);height:auto;aspect-ratio:1;transform:translate(-50%,-50%);border:1px solid #9caaa9;border-radius:50%;box-shadow:0 0 0 100vmax #101112;pointer-events:none;user-select:none}

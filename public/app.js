@@ -13,6 +13,8 @@ import QRCode from 'qrcode';
 import { createResourceLoader, avatarThumbnail } from './resources.js';
 import { installNavigation } from './navigation.js';
 import { createConversationInfo } from './conversation-info.js';
+import { installRoundPreview } from './round-preview.js';
+installRoundPreview();
 const resources=createResourceLoader(4);
 const mediaDownloads=createResourceLoader(2);
 const avatarResources=createResourceLoader(4);
