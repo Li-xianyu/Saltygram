@@ -112,7 +112,7 @@ export function mediaInfo(m) {
   const video=doc.attributes?.find(a=>a.className==='DocumentAttributeVideo');
   const audio=doc.attributes?.find(a=>a.className==='DocumentAttributeAudio');
   const kind = sticker ? 'sticker' : /^image\/(jpeg|png|webp|gif|avif|bmp|x-ms-bmp)$/.test(mime) ? 'image' : mime.startsWith('video/') ? 'video' : mime.startsWith('audio/') ? 'audio' : 'file';
-  return { kind, mime, duration:video?.duration??audio?.duration,audioTitle:audio?.title||'',performer:audio?.performer||'',voice:!!audio?.voice,width:video?.w,height:video?.h,round:!!video?.roundMessage, name: filename, size: Number(doc.size), key:doc.id?.toString(), emoji:sticker?.alt, stickerType:mime==='application/x-tgsticker'?'tgs':mime==='video/webm'?'video':'static', hasSet:!!sticker?.stickerset&&sticker.stickerset.className!=='InputStickerSetEmpty' };
+  return { kind, mime, duration:video?.duration??audio?.duration,audioTitle:audio?.title||'',performer:audio?.performer||'',voice:!!audio?.voice,width:video?.w,height:video?.h,round:!!video?.roundMessage, cover:!!(doc.thumbs?.length), name: filename, size: Number(doc.size), key:doc.id?.toString(), emoji:sticker?.alt, stickerType:mime==='application/x-tgsticker'?'tgs':mime==='video/webm'?'video':'static', hasSet:!!sticker?.stickerset&&sticker.stickerset.className!=='InputStickerSetEmpty' };
 }
 function displayName(entity){return [entity?.firstName,entity?.lastName].filter(Boolean).join(' ')||entity?.title||entity?.username||'未知用户'}
 function serialize(m,id){

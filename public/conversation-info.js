@@ -5,11 +5,13 @@ import {installRoundList} from './round-list.js';
 export const INFO_TABS=[['members','成员'],['media','媒体'],['saved','已收藏'],['music','音乐'],['files','文件'],['voice','语音'],['links','链接']];
 const ITEM_FILTERS={music:'audio',files:'file',voice:'voice',links:'link'};
 const ITEM_ICONS={music:'♫',files:'↧',voice:'◖',links:'↗',saved:'☆'};
+function formatBytes(n){return n>=1073741824?(n/1073741824).toFixed(1)+' GiB':n>=1048576?(n/1048576).toFixed(1)+' MiB':n>=1024?(n/1024).toFixed(1)+' KiB':(n||0)+' B'}
 export function attachmentLabel(item){
  const media=item.media;
  const title=media?.audioTitle||(media?.kind==='image'?'图片':media?.kind==='video'?'视频':media?.name)||item.text||'收藏内容';
  const duration=media?.duration?Math.floor(media.duration/60)+':'+String(Math.floor(media.duration%60)).padStart(2,'0'):'';
- return {title,detail:[media?.performer,duration].filter(Boolean).join(' · ')||item.text||({image:'图片',video:'视频',audio:'音频',file:'文件'})[media?.kind]||'链接与文本'};
+ const size=media?.size?formatBytes(media.size):'';
+ return {title,detail:[media?.performer,duration,size].filter(Boolean).join(' · ')||item.text||({image:'图片',video:'视频',audio:'音频',file:'文件'})[media?.kind]||'链接与文本'};
 }
 
 export function conversationStatus(profile){
@@ -24,7 +26,7 @@ export function conversationStatus(profile){
  return ({UserStatusRecently:'最近在线',UserStatusLastWeek:'一周内在线',UserStatusLastMonth:'一个月内在线'})[status?.type]||'最近上线时间不可见';
 }
 
-export function createConversationInfo({root,telegram,avatar,galleryTile,onOpenItem=()=>{},readCache,writeCache,watch,onBack,onMember,release=()=>{},scope=()=>null,cacheVersion=()=>0,roundList=installRoundList}){
+export function createConversationInfo({root,telegram,avatar,galleryTile,onOpenItem=()=>{},onPlayAudio=()=>null,coverLoader=()=>null,readCache,writeCache,watch,onBack,onMember,release=()=>{},scope=()=>null,cacheVersion=()=>0,roundList=installRoundList}){
  let generation=0,current,tab='members',filter='visual',pages=new Map(),photoURL,owner,cacheEpoch,renderedKey='',records=new Map(),round,columns=3;
  const $=selector=>root.querySelector(selector);
  const valid=(version,id)=>version===generation&&current?.id===id&&!root.hidden&&scope()===owner;
@@ -81,6 +83,14 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,onOpenI
   }catch{ /* Keep the small avatar if the full photo is unavailable. */ }
  }
  function pageKey(){return tab+':'+(tab==='media'?filter:'all')}
+ async function playAudio(item,peer){
+  const player=$('.info-audio-player');
+  const audio=await onPlayAudio(item,peer,player);
+  if(!audio)return;
+  player.hidden=false;
+  player.replaceChildren(audio);
+  try{audio.play().catch(()=>{})}catch{}
+ }
  function paintPage(){
   for(const b of root.querySelectorAll('[data-info-tab]')){const selected=b.dataset.infoTab===tab;b.classList.toggle('selected',selected);b.setAttribute('aria-selected',String(selected))}
   $('.info-filter').hidden=tab!=='media';const state=pages.get(pageKey()),list=$('.info-list'),key=pageKey()+':'+(state?.mediaPeer||'');list.classList.toggle('info-gallery',tab==='media');
@@ -96,9 +106,11 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,onOpenI
     if(!['image','video'].includes(item.media?.kind))continue;
     const version=generation,id=current.id;node=galleryTile(item,state.mediaPeer,()=>valid(version,id));
    }else{
+    const isAudio=item.media?.kind==='audio';
     const row=document.createElement('button');row.className='info-attachment info-round-item';
     const icon=document.createElement('span');icon.className='info-attachment-icon';icon.textContent=ITEM_ICONS[tab]||'☆';icon.setAttribute('aria-hidden','true');
-    const labels=document.createElement('span');labels.className='info-attachment-label';const label=attachmentLabel(item),title=document.createElement('strong'),detail=document.createElement('small');title.textContent=label.title;detail.textContent=label.detail;labels.append(title,detail);row.append(icon,labels);row.onclick=()=>onOpenItem(item,state.mediaPeer);node=row;
+    if(isAudio&&item.media?.cover)coverLoader(item,state.mediaPeer).then(url=>{if(url&&icon.isConnected){const img=document.createElement('img');img.alt='';img.src=url;icon.replaceChildren(img)}}).catch(()=>{});
+    const labels=document.createElement('span');labels.className='info-attachment-label';const label=attachmentLabel(item),title=document.createElement('strong'),detail=document.createElement('small');title.textContent=label.title;detail.textContent=label.detail;labels.append(title,detail);row.append(icon,labels);row.onclick=()=>isAudio?playAudio(item,state.mediaPeer):onOpenItem(item,state.mediaPeer);node=row;
    }
    next.set(item.id,{signature,node});nodes.push(node);
   }
@@ -128,7 +140,7 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,onOpenI
  }
  async function open(dialog,initialTab){
   round?.destroy();round=null;stop();records=new Map();renderedKey='';owner=scope();cacheEpoch=cacheVersion();const version=++generation,id=dialog.id;current=dialog;pages=new Map();tab=initialTab||(dialog.group||dialog.channel?'members':'media');filter='visual';root.hidden=false;document.body.classList.add('info-open');
-  root.innerHTML='<div class="info-toolbar"><button class="icon info-back" aria-label="返回聊天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button><span>会话信息</span></div><div class="info-hero"><div class="info-backdrop" aria-hidden="true"></div><div class="info-avatar avatar"></div></div><h2 class="info-name"></h2><p class="info-status"></p><div class="info-link" hidden></div><div class="info-tabs" role="tablist" aria-label="会话内容">'+INFO_TABS.map(([key,label])=>'<button role="tab" data-info-tab="'+key+'">'+label+'</button>').join('')+'</div><div class="info-filter" hidden><span>类型</span><button type="button" class="info-filter-trigger" aria-haspopup="listbox" aria-expanded="false"><span class="info-filter-value">全部</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="info-filter-menu" role="listbox" hidden><button type="button" role="option" data-filter="visual" class="selected">全部</button><button type="button" role="option" data-filter="photo">图片</button><button type="button" role="option" data-filter="video">视频</button></div></div><div class="info-list"></div><p class="info-load-status" role="status"></p><button class="info-more">加载更多</button>';
+  root.innerHTML='<div class="info-toolbar"><button class="icon info-back" aria-label="返回聊天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button><span>会话信息</span></div><div class="info-hero"><div class="info-backdrop" aria-hidden="true"></div><div class="info-avatar avatar"></div></div><h2 class="info-name"></h2><p class="info-status"></p><div class="info-link" hidden></div><div class="info-tabs" role="tablist" aria-label="会话内容">'+INFO_TABS.map(([key,label])=>'<button role="tab" data-info-tab="'+key+'">'+label+'</button>').join('')+'</div><div class="info-filter" hidden><span>类型</span><button type="button" class="info-filter-trigger" aria-haspopup="listbox" aria-expanded="false"><span class="info-filter-value">全部</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="info-filter-menu" role="listbox" hidden><button type="button" role="option" data-filter="visual" class="selected">全部</button><button type="button" role="option" data-filter="photo">图片</button><button type="button" role="option" data-filter="video">视频</button></div></div><div class="info-audio-player" hidden></div><div class="info-list"></div><p class="info-load-status" role="status"></p><button class="info-more">加载更多</button>';
   $('.info-back').onclick=onBack;$('.info-more').onclick=()=>loadPage();const filterTrigger=$('.info-filter-trigger'),filterMenu=$('.info-filter-menu');filterTrigger.onclick=()=>{const show=filterMenu.hidden;filterMenu.hidden=!show;filterTrigger.setAttribute('aria-expanded',String(!show))};for(const option of filterMenu.querySelectorAll('button'))option.onclick=()=>{filter=option.dataset.filter;$('.info-filter-value').textContent=option.textContent;for(const b of filterMenu.querySelectorAll('button')){const s=b.dataset.filter===filter;b.classList.toggle('selected',s);b.setAttribute('aria-selected',String(s))}filterMenu.hidden=true;filterTrigger.setAttribute('aria-expanded','false');loadPage()};root.addEventListener('scroll',onScroll,{passive:true});if(typeof window!=='undefined')window.addEventListener('scroll',onScroll,{passive:true});lastScrollY=scrollTop();edgeTouch=false;document.addEventListener('pointerdown',onDocPointer);document.addEventListener('touchstart',onTouchStart,{passive:true});document.addEventListener('touchmove',onTouchMove,{passive:true});document.addEventListener('touchend',onTouchEnd,{passive:true});
   for(const button of root.querySelectorAll('[data-info-tab]'))button.onclick=()=>{tab=button.dataset.infoTab;loadPage()};
   root.classList.add('info-round');for(const child of root.children)if(!child.classList.contains('info-list'))child.classList.add('info-round-item');

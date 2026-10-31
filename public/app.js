@@ -70,7 +70,37 @@ function renderDialogs(){
 function watchDocumentScroll(){return window.innerWidth<=480&&window.innerHeight<=540}
 function messageScroller(){return watchDocumentScroll()?(document.scrollingElement||document.documentElement):$('.conversation')}
 let infoChatScroll=0;
-const infoPage=createConversationInfo({root:$('#conversationInfo'),telegram,avatar,galleryTile:infoGalleryTile,onOpenItem:openInfoItem,readCache:snapshotGet,writeCache:snapshotPut,watch:watchDocumentScroll,cacheVersion:cacheGeneration,scope:()=>telegram.settings().owner||telegram.cacheScope(),release:root=>{if(root.matches('.info-media-tile'))visibleResources.unobserve(root);for(const el of root.querySelectorAll('.avatar,.auto-image,.video-card,.sticker,.info-media-tile')){visibleResources.unobserve(el);const animation=stickerAnimations.get(el);if(animation){animation.destroy();stickerAnimations.delete(el)}}},onBack:()=>nav.goBack(),onMember:item=>{
+async function playInfoAudio(message,peer,container){
+ const key=peer+':'+(message.media.key||message.id);
+ const existing=scopeKey('media:'+key),cached=existing?await cacheGet(existing):null;
+ let url,stream;
+ if(cached instanceof Blob)url=resourceURL(cached);
+ else{
+  if(globalThis.isSecureContext&&navigator.serviceWorker){
+   try{
+    const reader=await telegram.openMediaReader(peer,message.id);
+    stream=await createMediaStream({...reader,key:scopeKey('media:'+key+':chunk'),alive:()=>container.isConnected&&reader.valid()});
+    url=stream?.url;
+   }catch{}
+  }
+  if(!url){
+   if(message.media.size>100*1024*1024)throw Error('音频超过 100 MiB，无法播放');
+   url=await mediaDownloads.load('audio:'+key,async()=>resourceURL(await cachedBlob('media:'+key,()=>telegram.downloadMedia(peer,message.id))));
+  }
+ }
+ const audio=document.createElement('audio');audio.controls=true;audio.playsInline=true;audio.preload='auto';audio.src=url;
+ return audio;
+}
+async function loadAudioCover(message,peer){
+ try{
+  const key='audio-cover:'+peer+':'+(message.media.key||message.id);
+  return await resources.load(key,async()=>{
+   const blob=await cachedBlob(key,()=>telegram.downloadMedia(peer,message.id,undefined,'small'));
+   return blob?resourceURL(blob):null;
+  });
+ }catch{return null}
+}
+const infoPage=createConversationInfo({root:$('#conversationInfo'),telegram,avatar,galleryTile:infoGalleryTile,onOpenItem:openInfoItem,onPlayAudio:playInfoAudio,coverLoader:loadAudioCover,readCache:snapshotGet,writeCache:snapshotPut,watch:watchDocumentScroll,cacheVersion:cacheGeneration,scope:()=>telegram.settings().owner||telegram.cacheScope(),release:root=>{if(root.matches('.info-media-tile'))visibleResources.unobserve(root);for(const el of root.querySelectorAll('.avatar,.auto-image,.video-card,.sticker,.info-media-tile')){visibleResources.unobserve(el);const animation=stickerAnimations.get(el);if(animation){animation.destroy();stickerAnimations.delete(el)}}},onBack:()=>nav.goBack(),onMember:item=>{
  nav.goBack();if(!dialogs.some(d=>d.id===item.id))dialogs.unshift({...item,personal:true,unread:0,text:''});select(item.id);
 }});
 function closeConversationInfo(){const open=document.body.classList.contains('info-open');infoPage.hide();if(open)messageScroller().scrollTop=infoChatScroll}
