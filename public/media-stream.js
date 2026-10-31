@@ -24,7 +24,7 @@ async function start(){
     }
    }catch(error){port.postMessage({error:error.message})}finally{port.close()}
   });
-  await navigator.serviceWorker.register('/media-sw.js',{type:'module',scope:'/'});
+  await navigator.serviceWorker.register('media-sw.js',{type:'module'});
   if(navigator.serviceWorker.controller)return true;
   return new Promise(resolve=>{
    const finish=value=>{clearTimeout(timer);navigator.serviceWorker.removeEventListener('controllerchange',changed);resolve(value)};
@@ -56,5 +56,5 @@ export async function createMediaStream({size,mime,key,read,alive}){
  }};
  session.dispose=()=>{disposed=true;sessions.delete(token);memory.clear();if(!sessions.size&&observer){observer.disconnect();observer=null}};
  sessions.set(token,session);watchSessions();
- return {url:'/__tg_media__/'+token,dispose:session.dispose};
+ return {url:'__tg_media__/'+token,dispose:session.dispose};
 }

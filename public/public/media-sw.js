@@ -45,7 +45,9 @@ if(typeof ServiceWorkerGlobalScope!=='undefined'&&self instanceof ServiceWorkerG
  self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
  self.addEventListener('fetch',event=>{
   const url=new URL(event.request.url);
-  if(url.origin!==self.location.origin||!url.pathname.startsWith('/__tg_media__/')||!['GET','HEAD'].includes(event.request.method))return;
-  event.respondWith(self.clients.get(event.clientId).then(client=>mediaResponse(event.request,client,url.pathname.slice('/__tg_media__/'.length))));
+  const marker='/__tg_media__/';
+  const idx=url.pathname.lastIndexOf(marker);
+  if(url.origin!==self.location.origin||idx<0||!['GET','HEAD'].includes(event.request.method))return;
+  event.respondWith(self.clients.get(event.clientId).then(client=>mediaResponse(event.request,client,url.pathname.slice(idx+marker.length))));
  });
 }
