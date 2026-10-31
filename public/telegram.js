@@ -281,8 +281,8 @@ function installRealtime(source){
   if(update instanceof UpdateConnectionState){publish({kind:'connection',online:update.state===UpdateConnectionState.connected});return}
   const type=update.className;
   if(type==='UpdateDialogUnreadMark'){try{publish({kind:'read',chat:utils.getPeerId(update.peer.peer).toString(),unreadMark:!!update.unread})}catch{}return}
-  if(type==='UpdateUserTyping'){try{publish({kind:'typing',chat:update.userId.toString(),typing:true})}catch{}return}
-  if(type==='UpdateChatUserTyping'){try{publish({kind:'typing',chat:utils.getPeerId(new Api.PeerChat({chatId:update.chatId})).toString(),typing:true,user:utils.getPeerId(update.fromId).toString()})}catch{}return}
+  if(type==='UpdateUserTyping'){try{publish({kind:'typing',chat:update.userId.toString(),typing:true,action:update.action?.className})}catch{}return}
+  if(type==='UpdateChatUserTyping'){try{publish({kind:'typing',chat:utils.getPeerId(new Api.PeerChat({chatId:update.chatId})).toString(),typing:true,user:utils.getPeerId(update.fromId).toString(),action:update.action?.className})}catch{}return}
   if(type==='UpdateDeleteChannelMessages'){const chat=utils.getPeerId(new Api.PeerChannel({channelId:update.channelId})).toString();for(const id of update.messages)rawMessages.delete(chat+':'+id);publish({kind:'delete',chat,ids:update.messages});return}
   if(type==='UpdateDeleteMessages'){publish({kind:'delete',chat:null,ids:update.messages});return}
   if(['UpdateReadHistoryInbox','UpdateReadHistoryOutbox','UpdateReadChannelInbox','UpdateReadChannelOutbox','UpdateReadChannelDiscussionInbox','UpdateReadChannelDiscussionOutbox'].includes(type)){

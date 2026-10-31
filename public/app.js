@@ -662,10 +662,11 @@ async function performRecovery(){if(!connected||polling)return;if(document.body.
 function requestRecovery(delay=150){clearTimeout(dialogSyncTimer);dialogSyncTimer=setTimeout(performRecovery,delay)}
 
 let typingTimer;
+const TYPING_LABELS={'SendMessageTypingAction':'正在输入','SendMessageRecordVideoAction':'正在录制视频','SendMessageUploadVideoAction':'正在上传视频','SendMessageRecordAudioAction':'正在录音','SendMessageUploadAudioAction':'正在上传音频','SendMessageUploadPhotoAction':'正在上传照片','SendMessageUploadDocumentAction':'正在上传文件','SendMessageGeoLocationAction':'正在发送位置','SendMessageChooseContactAction':'正在选择联系人','SendMessageGamePlayAction':'正在玩游戏','SendMessageRecordRoundAction':'正在录制视频','SendMessageUploadRoundAction':'正在上传视频','SendMessageChooseStickerAction':'正在选择贴纸','SpeakingInGroupCallAction':'正在通话中','SendMessageHistoryImportAction':'正在导入历史','SendMessageEmojiInteraction':'正在回应表情'};
 function refreshChatStatus(){const d=dialogs.find(d=>d.id===active);if(d)$('#chatStatus').textContent=d.group?'群组':d.channel?'频道':conversationStatus(d)}
 function setTypingStatus(text){$('#chatStatus').textContent=text;clearTimeout(typingTimer);typingTimer=setTimeout(refreshChatStatus,5000)}
 function receiveUpdate(event){
- if(event.kind==='typing'){if(event.chat===active){const name=event.user?((dialogs.find(d=>d.id===event.user)||{}).title||'有人'):'对方';setTypingStatus(name+' 正在输入…')}return}
+ if(event.kind==='typing'){if(event.chat===active){const name=event.user?((dialogs.find(d=>d.id===event.user)||{}).title||'有人'):'对方';setTypingStatus(name+' '+(TYPING_LABELS[event.action]||'正在输入')+'…')}return}
  if(event.kind==='connection'){if(connected){setStatus(event.online?'online':'connecting');if(event.online)requestRecovery()}return}
  if(event.kind==='sync'){requestRecovery();return}
  if(event.kind==='read'){
