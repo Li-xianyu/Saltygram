@@ -128,7 +128,7 @@ async function jumpToMessage(chat,id){
  if(!row){const version=generation,key=threadKey();try{const data=await telegram.getMessages(active,activeTopic,{offsetId:id,addOffset:-25,limit:50});if(version!==generation)return;history[key]=data;paging().around=true;paging().more=data.length>=50;renderMessages('preserve');row=[...$('#messages').querySelectorAll('[data-message-id]')].find(el=>Number(el.dataset.messageId)===id)}catch(e){toast(e.errorMessage||e.message);return}}
  if(row){row.scrollIntoView?.({block:'center',behavior:'smooth'});row.classList.add('message-highlight');setTimeout(()=>row.classList.remove('message-highlight'),1600)}else toast('原消息已删除或不可访问');
 }
-$('#search').oninput=renderDialogs;
+$('#search').oninput=renderDialogs;$('#searchButton').onclick=()=>{switchNav('chat');const s=$('.search');s.hidden=false;$('#search').focus()};$('#searchClose').onclick=()=>{$('.search').hidden=true;$('#search').value='';renderDialogs()};
 for(const b of document.querySelectorAll('[data-tab]'))b.onclick=()=>{tab=b.dataset.tab;document.querySelector('.tabs .selected')?.classList.remove('selected');b.classList.add('selected');renderDialogs()};
 $('#theme').onclick=()=>{document.body.classList.toggle('dark');localStorage.setItem('xy-theme',document.body.classList.contains('dark')?'dark':'light')};if(localStorage.getItem('xy-theme')==='dark')document.body.classList.add('dark');
 $('#back').onclick=()=>nav.goBack();
@@ -228,7 +228,7 @@ async function loadReal(){
 let polling=false;
 setInterval(()=>{if(!connected||loading||document.hidden)return;performRecovery()},30000);
 
-document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();$('#search').focus()}});
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();$('#searchButton').click()}});
 
 function bytes(n){return n>=1073741824?(n/1073741824).toFixed(1)+' GiB':n>=1048576?(n/1048576).toFixed(1)+' MiB':n>=1024?(n/1024).toFixed(1)+' KiB':(n||0)+' B'}
 const mediaCache=new Map();
