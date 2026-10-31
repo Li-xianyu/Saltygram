@@ -162,7 +162,7 @@ async function startQrLogin(){
   if(!qrLoginActive)return;
   await loadReal();$('#login').close();
  }catch(e){
-  if(qrLoginActive)$('#authError').textContent=e.message==='Account has 2FA enabled.'?'该账号开启了两步验证，请改用验证码方式登录。':(e.errorMessage||e.message);
+  if(qrLoginActive)$('#authError').textContent=e.message==='Account has 2FA enabled.'?'该账号开启了两步验证，请改用验证码方式登录。':e.errorMessage==='AUTH_RESTART'?'认证已重置，请关闭弹窗后重新扫码。':(e.errorMessage||e.message);
  }finally{qrLoginActive=false}
 }
 $('#qrLoginButton').onclick=startQrLogin;

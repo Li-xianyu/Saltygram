@@ -49,7 +49,11 @@ export async function login({ code, password }) {
 }
 export async function loginWithQrCode(onToken){
  const c=await getClient();
- await c.signInUserWithQrCode({apiId:memory.apiId,apiHash:memory.apiHash},{qrCode:async({token})=>{onToken(Buffer.from(token).toString('base64url'))}});
+ await c.signInUserWithQrCode({apiId:memory.apiId,apiHash:memory.apiHash},{qrCode:async({token})=>{
+  // Browser buffer polyfill lacks 'base64url'; convert base64 manually.
+  const url=Buffer.from(token).toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  onToken(url);
+ }});
  await identify();return {authorized:true};
 }
 export async function abortQrLogin(){if(client){try{await client.disconnect()}catch{}client=undefined}}
