@@ -46,6 +46,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  app=app.replace("'./telegram.js'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(adapter).toString('base64')));
  for(const file of ['cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
  app=app.replace("'pako'",JSON.stringify(import.meta.resolve('pako')));
+ app=app.replace("'qrcode'",JSON.stringify(import.meta.resolve('qrcode')));
  try{
   await import('data:text/javascript;base64,'+Buffer.from(app).toString('base64'));
   for(let i=0;i<20&&!document.querySelector('.dialog-row');i++)await new Promise(r=>setImmediate(r));

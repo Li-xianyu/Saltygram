@@ -47,6 +47,12 @@ export async function login({ code, password }) {
     await identify(); return { authorized: true };
   } catch (e) { if (e.errorMessage === 'SESSION_PASSWORD_NEEDED') return { passwordRequired: true }; throw e; }
 }
+export async function loginWithQrCode(onToken){
+ const c=await getClient();
+ await c.signInUserWithQrCode({apiId:memory.apiId,apiHash:memory.apiHash},{qrCode:async({token})=>{onToken(Buffer.from(token).toString('base64url'))}});
+ await identify();return {authorized:true};
+}
+export async function abortQrLogin(){if(client){try{await client.disconnect()}catch{}client=undefined}}
 let dialogsLoading;
 export function getDialogs(){return dialogsLoading ||= fetchDialogs().finally(()=>dialogsLoading=null)}
 async function fetchDialogs() {

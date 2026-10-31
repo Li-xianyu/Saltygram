@@ -6,6 +6,7 @@ import { cacheGet, cachePut, cacheStats, clearCache, removeCachePrefixes, cacheG
 import { mergePage, mergeLatest, reconcileMessages, messagePreview, deliveryState } from './chat-state.js';
 import { richText, safeURL } from './richtext.js';
 import { ungzip } from 'pako';
+import QRCode from 'qrcode';
 import { createResourceLoader, avatarThumbnail } from './resources.js';
 import { installNavigation } from './navigation.js';
 const resources=createResourceLoader(4);
@@ -147,7 +148,25 @@ $('#composer').onsubmit=async e=>{
 function clearCompose(){composeContext=null;$('#composeContext').hidden=true;$('#message').placeholder='消息';$('.send').title='发送消息'}
 function setCompose(m,edit=false){composeContext={message:m,edit,reply:!edit};$('#composeContext').hidden=false;$('#composeContextLabel').textContent=edit?'编辑消息':'回复 '+(m.senderName||'消息');$('#composeContextText').textContent=messagePreview(m);if(edit)$('#message').value=m.text;$('#message').focus();$('.send').title=edit?'保存编辑':'发送回复'}
 $('#cancelCompose').onclick=()=>{if(composeContext?.edit)$('#message').value='';clearCompose()};
-function openLogin(){phase='phone';$('#credentials').hidden=false;$('#authForm').reset();const saved=telegram.settings();$('#apiId').value=saved.apiId||'';$('#apiHash').value=saved.apiHash||'';$('#remember').checked=saved.remember??true;$('#authInput').type='tel';$('#authInput').placeholder='+86138…';$('#authLabel').textContent='手机号码（含国家区号）';$('#authSubmit').textContent='获取验证码';$('#authHint').textContent='输入手机号码，验证码将发送到 Telegram 或短信。';$('#authError').textContent='';$('#login').showModal()}
+function openLogin(){phase='phone';$('#credentials').hidden=false;$('#authForm').reset();const saved=telegram.settings();$('#apiId').value=saved.apiId||'';$('#apiHash').value=saved.apiHash||'';$('#remember').checked=saved.remember??true;$('#authInput').type='tel';$('#authInput').placeholder='+86138…';$('#authLabel').textContent='手机号码（含国家区号）';$('#authSubmit').textContent='获取验证码';$('#authHint').textContent='输入手机号码，验证码将发送到 Telegram 或短信。';$('#authError').textContent='';resetQrLoginUI();$('#login').showModal()}
+let qrLoginActive=false;
+function resetQrLoginUI(){qrLoginActive=false;$('#qrLogin').hidden=true;$('#qrLoginButton').hidden=false;$('#qrImage').removeAttribute('src');$('#authHint').hidden=false;$('#authLabel').hidden=false;$('#authInput').hidden=false;$('#authSubmit').hidden=false;$('#credentials').hidden=false}
+async function startQrLogin(){
+ const apiId=$('#apiId').value.trim(),apiHash=$('#apiHash').value.trim();
+ try{await telegram.configure(apiId,apiHash,$('#remember').checked)}catch(e){$('#authError').textContent=e.message;return}
+ qrLoginActive=true;
+ $('#credentials').hidden=true;$('#authHint').hidden=true;$('#authLabel').hidden=true;$('#authInput').hidden=true;$('#authSubmit').hidden=true;$('#qrLoginButton').hidden=true;
+ $('#authError').textContent='';$('#qrLogin').hidden=false;
+ try{
+  await telegram.loginWithQrCode(token=>{QRCode.toDataURL('tg://login?token='+token,{margin:1,width:200}).then(url=>{if(qrLoginActive)$('#qrImage').src=url}).catch(()=>{})});
+  if(!qrLoginActive)return;
+  await loadReal();$('#login').close();
+ }catch(e){
+  if(qrLoginActive)$('#authError').textContent=e.message==='Account has 2FA enabled.'?'该账号开启了两步验证，请改用验证码方式登录。':(e.errorMessage||e.message);
+ }finally{qrLoginActive=false}
+}
+$('#qrLoginButton').onclick=startQrLogin;
+$('#cancelQrLogin').onclick=async()=>{qrLoginActive=false;resetQrLoginUI();await telegram.abortQrLogin()};
 $('#connect').onclick=openLogin;$('#accountAction').onclick=async()=>{if(!connected)openLogin();else{try{await api('/logout',{});location.reload()}catch(e){toast(e.message)}}};$('#closeLogin').onclick=()=>$('#login').close();
 $('#authForm').onsubmit=async e=>{e.preventDefault();const b=$('#authSubmit');b.disabled=true;$('#authError').textContent='';try{const value=$('#authInput').value.trim();if(phase==='phone'){await telegram.configure($('#apiId').value.trim(),$('#apiHash').value.trim(),$('#remember').checked);const data=await api('/auth/code',{phone:value.replace(/\s/g,'')});phase='code';$('#credentials').hidden=true;$('#authLabel').textContent='登录验证码';$('#authHint').textContent=data.viaApp?'请查看 Telegram 官方会话中的验证码。':'请查看 Telegram 或短信中的验证码。';$('#authInput').value='';$('#authInput').type='text';$('#authInput').placeholder='输入验证码';b.textContent='登录'}else{const result=await api('/auth/login',phase==='password'?{password:$('#authInput').value}:{code:value});if(result.passwordRequired){phase='password';$('#authLabel').textContent='两步验证密码';$('#authHint').textContent='你的账号开启了两步验证，请输入密码。';$('#authInput').value='';$('#authInput').type='password';$('#authInput').placeholder='输入两步验证密码'}else{await loadReal();$('#login').close()}}}catch(e){$('#authError').textContent=e.message}finally{b.disabled=false}};
 async function loadReal(){
