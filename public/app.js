@@ -159,7 +159,7 @@ async function startQrLogin(){
  $('#credentials').hidden=true;$('#authHint').hidden=true;$('#authLabel').hidden=true;$('#authInput').hidden=true;$('#authSubmit').hidden=true;$('#qrLoginButton').hidden=true;
  $('#authError').textContent='';$('#qrLogin').hidden=false;$('#qrLoading').hidden=false;$('#qrImage').hidden=true;$('#qrExpire').textContent='';
  try{
-  await telegram.loginWithQrCode((token,expires)=>{QRCode.toDataURL('tg://login?token='+token,{margin:1,width:200}).then(url=>{if(!qrLoginActive)return;$('#qrImage').src=url;$('#qrImage').hidden=false;$('#qrLoading').hidden=true;setQrExpire(expires||30)}).catch(()=>{})});
+  await telegram.loginWithQrCode((token,expires)=>{QRCode.toDataURL('tg://login?token='+token,{margin:1,width:200}).then(url=>{if(!qrLoginActive)return;$('#qrImage').src=url;$('#qrImage').hidden=false;$('#qrLoading').hidden=true;setQrExpire(expires?Math.max(0,Math.round(expires-Date.now()/1000)):30)}).catch(()=>{})});
   if(!qrLoginActive)return;
   await loadReal();$('#login').close();
  }catch(e){
