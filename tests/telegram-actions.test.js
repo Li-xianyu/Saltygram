@@ -4,8 +4,9 @@ import {readFile} from 'node:fs/promises';
 test('Telegram adapter uses history cursors, explicit replies, edits, deletion scope, real read state and sticker installation',async()=>{
  globalThis.localStorage={getItem:(key)=>key==='xy-telegram-account-active'?'1':JSON.stringify([{apiId:1,apiHash:'0'.repeat(32),remember:true,owner:'1'}]),setItem(){}};globalThis.adapterCalls=[];globalThis.adapterEvents=[];
  const telegramURL=import.meta.resolve('telegram');
- const mock=`import {Api,utils} from ${JSON.stringify(telegramURL)};export {Api,utils};
+ const mock=`import {Api,utils,extensions} from ${JSON.stringify(telegramURL)};export {Api,utils,extensions};
  export class TelegramClient{
+ constructor(session,id,hash,options){globalThis.adapterOptions=options}
  async getMe(){return {id:1,firstName:'Owner',username:'owner',phone:'123',photo:{photoId:8},apiHash:'must-not-leak'}}
  connected=true;addEventHandler(handler,builder){globalThis.adapterEvents.push({handler,builder})}async getDialogs(){return [{id:2,inputEntity:new Api.InputPeerUser({userId:2,accessHash:3}),isUser:true,entity:{className:'User',id:2,firstName:'Peer'},title:'Peer',unreadCount:2,dialog:{pinned:true,readInboxMaxId:30,readOutboxMaxId:40}},{id:'-1000000000008',inputEntity:new Api.InputPeerChannel({channelId:8,accessHash:9}),entity:{className:'Channel',id:8,title:'Group',megagroup:true},title:'Group',dialog:{}},{id:'-7',inputEntity:new Api.InputPeerChat({chatId:7}),entity:{className:'Chat',id:7,title:'Basic'},title:'Basic',dialog:{}}]}
  async getMessages(peer,options){globalThis.adapterCalls.push({method:'history',options});if(options.ids?.[0]>=900)return [{className:'Message',id:options.ids[0],document:{id:99,accessHash:3,fileReference:new Uint8Array([1]),dcId:2,size:options.ids[0]===900?100:1048583,mimeType:'video/mp4',attributes:[]}}];return [{className:'Message',id:options.ids?.[0]||50,message:'original',out:false,date:1}]}
@@ -33,6 +34,9 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  source=source.replace("'./mtproto-compat.js'",JSON.stringify(new URL('../public/mtproto-compat.js',import.meta.url).href));
  const api=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
  const own=await api.getOwnProfile();assert.deepEqual(own,{id:'1',title:'Owner',username:'owner',about:'My bio',phone:'123',avatarKey:'8'});
+ const {extensions}=await import('telegram');const {ConnectionTCPObfuscated}=await import('telegram/network/index.js');
+ assert.equal(globalThis.adapterOptions.networkSocket,extensions.PromisedWebSockets);
+ assert.equal(globalThis.adapterOptions.connection,ConnectionTCPObfuscated);assert.equal(globalThis.adapterOptions.useWSS,true);
  const dialogs=await api.getDialogs();assert.equal(dialogs[0].personal,true);assert.equal(dialogs[0].pinned,true);assert.equal(dialogs[0].pinOrder,0);assert.equal(dialogs[1].pinned,false);await api.getMessages('2',10,{offsetId:300,limit:50});const page=globalThis.adapterCalls.find(c=>c.method==='history');assert.equal(page.options.offsetId,300);assert.equal(page.options.replyTo,10);
  const reply=await api.sendMessage('2','reply',10,45);const send=globalThis.adapterCalls.find(c=>c.method==='send');assert.equal(send.options.replyTo,45);assert.equal(send.options.topMsgId,10);assert.equal(reply.reply.text,'original');
  await api.editMessage('2',51,'changed');assert.equal(globalThis.adapterCalls.find(c=>c.method==='edit').options.message,51);

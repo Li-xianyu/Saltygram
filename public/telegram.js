@@ -2,10 +2,9 @@ import { progressRatio, downloadInParts, createTaskPool } from './media-download
 import { NewMessage } from 'telegram/events/NewMessage.js';
 import { EditedMessage } from 'telegram/events/EditedMessage.js';
 import { Raw } from 'telegram/events/Raw.js';
-import { UpdateConnectionState } from 'telegram/network/index.js';
+import { UpdateConnectionState, MTProtoSender, ConnectionTCPObfuscated } from 'telegram/network/index.js';
 import bigInt from 'big-integer';
-import { TelegramClient, Api, utils } from 'telegram';
-import { MTProtoSender } from 'telegram/network/MTProtoSender.js';
+import { TelegramClient, Api, utils, extensions } from 'telegram';
 import { installOrphanResultGuard } from './mtproto-compat.js';
 import { StringSession } from 'telegram/sessions/index.js';
 import { clearCache, removeCachePrefixes } from './cache.js';
@@ -35,7 +34,9 @@ export async function configure(apiId, apiHash, remember) {
 }
 async function getClient() {
   if (!memory.apiId || !memory.apiHash) throw Error('请先填写 API ID 和 API Hash');
-  if(!client){client = new TelegramClient(new StringSession(memory.session || ''), memory.apiId, memory.apiHash, { useWSS: true, connectionRetries: 2, requestRetries: 2, timeout: 10, floodSleepThreshold: 0, autoReconnect: true });installRealtime(client)}
+  // Pin both transport classes: CommonJS cycles can leave GramJS's captured
+  // default socket undefined, which silently falls back to Node's net.Socket.
+  if(!client){client = new TelegramClient(new StringSession(memory.session || ''), memory.apiId, memory.apiHash, { networkSocket: extensions.PromisedWebSockets, connection: ConnectionTCPObfuscated, useWSS: true, connectionRetries: 2, requestRetries: 2, timeout: 10, floodSleepThreshold: 0, autoReconnect: true });installRealtime(client)}
   if (!client.connected) { connection ||= client.connect().finally(() => connection = null); await connection; }
   return client;
 }

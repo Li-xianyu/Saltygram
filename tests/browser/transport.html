@@ -1,0 +1,17 @@
+<!doctype html><meta charset="utf-8"><title>生产构建连接回归测试</title><pre id="result">正在检查…</pre><script type="module">
+import * as telegram from '../../public/telegram.js';
+import {extensions} from 'telegram';
+const out=document.querySelector('#result');
+const original=extensions.PromisedWebSockets.prototype.connect;
+let reached=false;
+extensions.PromisedWebSockets.prototype.connect=async function(port,ip){
+ if(port!==443||!ip.endsWith('.web.telegram.org'))throw Error('Expected Telegram WSS endpoint');
+ reached=true;out.textContent='PASS：生产构建的真实 Telegram 适配器使用 PromisedWebSockets，端口 443，刷新后再次验证。';
+ throw Error('TEST_STOP_BEFORE_NETWORK');
+};
+try{
+ await telegram.configure(1,'0'.repeat(32),false);
+ await telegram.testConnection();
+}catch(error){if(!reached)out.textContent='FAIL：'+error.message}
+finally{await telegram.abortQrLogin();extensions.PromisedWebSockets.prototype.connect=original}
+</script>

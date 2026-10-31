@@ -91,3 +91,5 @@ GramJS 下载回调的字节数在适配层统一换算为 0～1 进度，界面
 ## GramJS 迟到响应兼容
 
 固定兼容当前 GramJS 2.26.22 的 RPC 接收路径：对于已经没有 pending request 的重复或迟到响应，在解析前直接返回，避免依赖库主动构造 `TypeNotFoundError(0)` 时触发阻塞式浏览器 alert。补丁在创建主连接或媒体 DC 连接之前安装，不更改请求队列、传输解密、有效请求的解析、RPC 错误和 Promise 拒绝。测试使用实际依赖复现原始弹窗，并验证重复响应、迟到错误响应及有效文件响应、真实解析失败。升级 Telegram 依赖时需重新核对该兼容层。
+
+浏览器连接明确指定 `PromisedWebSockets` 与 `ConnectionTCPObfuscated`，不依赖 GramJS 在 CommonJS 循环初始化时捕获的默认 Socket；主连接与导出的媒体 DC 连接共享该显式传输配置。`npm run test:transport` 构建独立的生产模式回归页面，在浏览器打开终端显示的地址并刷新，确认真实适配器到达浏览器 Socket 的 connect 方法。测试在发起网络请求前主动停止，使用虚构凭据，不读取或更改真实账号；它验证浏览器传输选择，不代表 Telegram 网络可达性。
