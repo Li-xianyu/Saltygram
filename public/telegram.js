@@ -100,7 +100,7 @@ let dialogsLoading;
 export function getDialogs(){return dialogsLoading ||= fetchDialogs().finally(()=>dialogsLoading=null)}
 async function fetchDialogs() {
   const c = await getClient(); const dialogs = await c.getDialogs({ limit: 80 });
-  return dialogs.map((d,index) => { const id = d.id.toString(); peers.set(id, d.inputEntity); entities.set(id,d.entity); const photo=d.entity?.photo; return { id, pinned:!!d.dialog.pinned, pinOrder:d.dialog.pinned?index:null, folderId:d.dialog.folderId||0, avatarKey: photo?.photoId?.toString() || '', title: d.title || '未命名', lastMessageId:d.message?.id, unread: d.unreadCount || 0, unreadMark:!!d.dialog.unreadMark, text: d.message?.message || (d.message?.media ? '[媒体消息]' : ''), date: d.message?.date, personal: !!d.isUser&&!d.entity?.bot&&!d.entity?.self&&id!==memory.owner, bot:!!d.entity?.bot, group: d.isGroup, channel: d.isChannel, forum: !!d.entity?.forum, readState:{inbox:d.dialog.readInboxMaxId||0,outbox:d.dialog.readOutboxMaxId||0,unread:d.unreadCount||0,broadcast:!!d.entity?.broadcast,saved:id===memory.owner} }; });
+  return dialogs.map((d,index) => { const id = d.id.toString(); peers.set(id, d.inputEntity); entities.set(id,d.entity); const photo=d.entity?.photo; return { id, pinned:!!d.dialog.pinned, pinOrder:d.dialog.pinned?index:null, folderId:d.dialog.folderId||0, avatarKey: photo?.photoId?.toString() || '', title: d.title || '未命名', lastMessageId:d.message?.id, unread: d.unreadCount || 0, unreadMark:!!d.dialog.unreadMark, text: d.message?.message || (d.message?.media ? '[媒体消息]' : ''), date: d.message?.date, personal: !!d.isUser&&!d.entity?.bot&&!d.entity?.self&&id!==memory.owner, bot:!!d.entity?.bot, group: d.isGroup, channel: d.isChannel, forum: !!d.entity?.forum, readState:{inbox:d.dialog.readInboxMaxId||0,outbox:d.dialog.readOutboxMaxId||0,unread:d.unreadCount||0,broadcast:!!d.entity?.broadcast,saved:id===memory.owner}, online:!!d.entity?.status&&d.entity.status.className==='UserStatusOnline'&&(!d.entity.status.expires||d.entity.status.expires>Date.now()/1000), status:d.entity?.status?{type:d.entity.status.className,wasOnline:d.entity.status.wasOnline,expires:d.entity.status.expires}:null }; });
 }
 export function mediaInfo(m) {
   if (m.photo) return { kind: 'image', mime: 'image/jpeg', name: `photo-${m.id}.jpg`, key:m.photo.id?.toString(), size: 0 };
@@ -281,6 +281,8 @@ function installRealtime(source){
   if(update instanceof UpdateConnectionState){publish({kind:'connection',online:update.state===UpdateConnectionState.connected});return}
   const type=update.className;
   if(type==='UpdateDialogUnreadMark'){try{publish({kind:'read',chat:utils.getPeerId(update.peer.peer).toString(),unreadMark:!!update.unread})}catch{}return}
+  if(type==='UpdateUserTyping'){try{publish({kind:'typing',chat:update.userId.toString(),typing:true})}catch{}return}
+  if(type==='UpdateChatUserTyping'){try{publish({kind:'typing',chat:utils.getPeerId(new Api.PeerChat({chatId:update.chatId})).toString(),typing:true,user:utils.getPeerId(update.fromId).toString()})}catch{}return}
   if(type==='UpdateDeleteChannelMessages'){const chat=utils.getPeerId(new Api.PeerChannel({channelId:update.channelId})).toString();for(const id of update.messages)rawMessages.delete(chat+':'+id);publish({kind:'delete',chat,ids:update.messages});return}
   if(type==='UpdateDeleteMessages'){publish({kind:'delete',chat:null,ids:update.messages});return}
   if(['UpdateReadHistoryInbox','UpdateReadHistoryOutbox','UpdateReadChannelInbox','UpdateReadChannelOutbox','UpdateReadChannelDiscussionInbox','UpdateReadChannelDiscussionOutbox'].includes(type)){
@@ -314,6 +316,7 @@ export async function getConversationProfile(id){
  return {...base,...personSummary(e),about:full?.about||'',members:full?.participantsCount??full?.participants?.participants?.length??e.participantsCount,online,
  link:base.group?(e.username?'https://t.me/'+e.username:full?.exportedInvite?.link||''):''};
 }
+export async function getOnlineCount(id){const {c,peer}=await readyPeer(id);try{return (await c.invoke(new Api.messages.GetOnlines({peer}))).onlines}catch{return undefined}}
 export async function getConversationMembers(id,offset=0,limit=40){
  const {c,peer}=await readyPeer(id),info=await getConversationInfo(id);if(!info.group&&!info.channel)return {items:[],more:false,next:0};
  let result,rows;

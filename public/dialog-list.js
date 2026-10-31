@@ -37,7 +37,7 @@ export function createDialogList(root,{select,contextMenu,avatar,observeAvatar=(
    text(r.title,d.title);text(r.time,d.time||(d.date?formatTime(d.date):''));text(r.snippet,d.text);
    const unread=Math.max(0,Number(d.unread)||0);text(r.badge,unread||'');const marked=!!d.unreadMark&&!unread,hidden=!unread&&!marked;if(r.badge.hidden!==hidden)r.badge.hidden=hidden;if(r.badge.classList.contains('unread-dot')!==marked)r.badge.classList.toggle('unread-dot',marked);
    const label=marked?'标记未读':unread+' 条未读';if(r.badge.getAttribute('aria-label')!==label)r.badge.setAttribute('aria-label',label);
-   const avatarKey=d.id+':'+(d.avatarKey||'')+':'+(!d.avatarKey?d.title:'');if(r.avatarKey!==avatarKey){releaseAvatar(r.av);r.avatarKey=avatarKey;avatar(r.av,d)}
+   const avatarKey=d.id+':'+(d.avatarKey||'')+':'+(!d.avatarKey?d.title:'');if(r.avatarKey!==avatarKey){releaseAvatar(r.av);r.avatarKey=avatarKey;avatar(r.av,d)}const online=!!d.online&&d.personal;if(r.av.classList.contains('online')!==online)r.av.classList.toggle('online',online);
    nodes.push(r.row);
   }
   if(!nodes.length&&connected){empty ||= document.createElement('div');empty.className='empty';text(empty,query?'没有搜索结果':tab==='private'?'暂无私聊':emptyText);nodes.push(empty)}
