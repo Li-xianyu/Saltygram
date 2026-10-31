@@ -243,6 +243,12 @@ export async function addContact(id,firstName,lastName=''){
  firstName=String(firstName||'').trim();lastName=String(lastName||'').trim();if(!firstName)throw Error('请填写联系人名字');const info=await getConversationInfo(id);if(!info.canAddContact)throw Error('此会话不支持添加联系人');
  const {c,peer}=await readyPeer(id);await c.invoke(new Api.contacts.AddContact({id:utils.getInputUser(peer),firstName,lastName,phone:'',addPhonePrivacyException:false}));const e=entities.get(id);e.contact=true;e.firstName=firstName;e.lastName=lastName;return getConversationInfo(id);
 }
+export async function getContacts(){
+ const c=await getClient();
+ const result=await c.invoke(new Api.contacts.GetContacts({hash:bigInt.zero}));
+ const users=new Map((result.users||[]).map(u=>[u.id.toString(),u]));
+ return (result.contacts||[]).map(ct=>{const id=String(ct.userId);const u=users.get(id);if(!u)return null;entities.set(id,u);return {id,title:displayName(u),firstName:u.firstName||'',lastName:u.lastName||'',phone:u.phone||'',avatarKey:u.photo?.photoId?.toString()||''}}).filter(Boolean);
+}
 export async function markConversationUnread(id,unread=true){const {c,peer}=await readyPeer(id);await c.invoke(new Api.messages.MarkDialogUnread({peer:new Api.InputDialogPeer({peer}),unread}))}
 export async function changeConversation(id,{action,revoke=false}={}){
  const info=await getConversationInfo(id);const {c,peer}=await readyPeer(id);

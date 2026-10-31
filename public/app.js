@@ -128,7 +128,7 @@ async function jumpToMessage(chat,id){
  if(!row){const version=generation,key=threadKey();try{const data=await telegram.getMessages(active,activeTopic,{offsetId:id,addOffset:-25,limit:50});if(version!==generation)return;history[key]=data;paging().around=true;paging().more=data.length>=50;renderMessages('preserve');row=[...$('#messages').querySelectorAll('[data-message-id]')].find(el=>Number(el.dataset.messageId)===id)}catch(e){toast(e.errorMessage||e.message);return}}
  if(row){row.scrollIntoView?.({block:'center',behavior:'smooth'});row.classList.add('message-highlight');setTimeout(()=>row.classList.remove('message-highlight'),1600)}else toast('原消息已删除或不可访问');
 }
-$('#search').oninput=renderDialogs;$('#searchButton').onclick=()=>{switchNav('chat');const s=$('.search');s.hidden=false;$('#search').focus()};$('#searchClose').onclick=()=>{$('.search').hidden=true;$('#search').value='';renderDialogs()};
+$('#search').oninput=()=>{if(document.body.classList.contains('nav-contacts'))renderContacts();else renderDialogs()};$('#searchButton').onclick=()=>{switchNav('chat');const s=$('.search');s.hidden=false;$('#search').focus()};$('#searchClose').onclick=()=>{$('.search').hidden=true;$('#search').value='';renderDialogs()};
 for(const b of document.querySelectorAll('[data-tab]'))b.onclick=()=>{tab=b.dataset.tab;document.querySelector('.tabs .selected')?.classList.remove('selected');b.classList.add('selected');renderDialogs()};
 $('#theme').onclick=()=>{document.body.classList.toggle('dark');localStorage.setItem('xy-theme',document.body.classList.contains('dark')?'dark':'light')};if(localStorage.getItem('xy-theme')==='dark')document.body.classList.add('dark');
 $('#back').onclick=()=>nav.goBack();
@@ -178,10 +178,40 @@ const NAV_SVG={
 };
 function setStatus(state){const dot=$('#statusDot');dot.classList.toggle('online',state==='online');dot.classList.toggle('connecting',state==='connecting')}
 function closeMenu(){$('#menuPanel').hidden=true;$('#menuButton').setAttribute('aria-expanded','false')}
+let contacts=[],contactsLoaded=false;
+function renderContacts(){
+ const root=$('#contactsView');
+ const query=($('#search').value||'').trim().toLowerCase();
+ root.replaceChildren();
+ const list=contacts.filter(c=>!query||c.title.toLowerCase().includes(query));
+ for(const c of list){
+  const row=document.createElement('button');row.className='dialog-row';row.type='button';
+  row.onclick=()=>{if(!dialogs.some(d=>d.id===c.id)){dialogs.unshift({id:c.id,title:c.title,unread:0,text:'',date:0,avatarKey:c.avatarKey,personal:true,user:true,group:false,channel:false});renderDialogs()}select(c.id)};
+  const av=document.createElement('div');av.className='avatar';
+  if(c.avatarKey)avatar(av,{id:c.id,title:c.title,avatarKey:c.avatarKey});
+  else av.textContent=(c.title||'?').slice(0,1);
+  const copy=document.createElement('div');copy.className='dialog-copy';
+  const top=document.createElement('div');top.className='row-top';
+  const title=document.createElement('strong');title.textContent=c.title;
+  top.append(title);
+  const preview=document.createElement('div');preview.className='preview';
+  const p=document.createElement('p');p.textContent=c.phone||'';
+  preview.append(p);
+  copy.append(top,preview);
+  row.append(av,copy);
+  root.append(row);
+ }
+ if(!list.length)root.innerHTML='<div class="empty">'+(query?'没有匹配的联系人':'暂无联系人')+'</div>';
+}
+async function loadContacts(){
+ try{contacts=await telegram.getContacts()}catch(e){contacts=[]}
+ contactsLoaded=true;
+ renderContacts();
+}
 function switchNav(key){
  document.body.classList.toggle('nav-contacts',key==='contacts');
  document.body.classList.toggle('nav-me',key==='me');
- if(key==='contacts'&&!$('#contactsView').children.length)$('#contactsView').innerHTML='<div class="empty">联系人功能开发中</div>';
+ if(key==='contacts'&&!contactsLoaded)loadContacts();
  if(key==='me'&&!$('#meView').children.length)$('#meView').innerHTML='<div class="empty">「我的」功能开发中</div>';
 }
 function renderMenu(){
