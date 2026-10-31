@@ -183,6 +183,30 @@ export async function downloadMedia(id, messageId, progress, thumbnail = false) 
   return new Blob(parts,{type:thumbnail&&thumb?'image/jpeg':mediaInfo(m)?.mime||'application/octet-stream'});
 }
 
+// Random-access reads for the browser's Range requests; never assemble the file.
+export async function openMediaReader(id,messageId){
+ const c=await getClient(),owner=memory.owner;
+ if(!peers.has(id))await getDialogs();
+ let message=rawMessages.get(id+':'+messageId);
+ if(!message){[message]=await c.getMessages(peers.get(id)||id,{ids:[messageId]})}
+ let target=message&&parallelMediaTarget(message,false);
+ if(!target||!message.document)throw Error('此媒体不支持分块播放');
+ const size=target.size,mime=mediaInfo(message).mime;
+ return {size,mime,valid:()=>client===c&&memory.owner===owner,read:offset=>mediaPartPool.run(async()=>{
+  if(client!==c||memory.owner!==owner)throw Error('账号已切换');
+  const read=async()=>{
+   const iterator=c.iterDownload({file:target.location,offset:bigInt(offset),limit:1,requestSize:512*1024,chunkSize:512*1024,fileSize:bigInt(size),dcId:target.dcId});
+   try{for await(const chunk of iterator)return chunk;throw Error('视频分块为空')}finally{await iterator.close?.()}
+  };
+  try{return await read()}catch(error){
+   if(!/FILE_REFERENCE|FILEREF_UPGRADE_NEEDED/.test(String(error.errorMessage||error.message)))throw error;
+   [message]=await c.getMessages(peers.get(id)||id,{ids:[messageId]});
+   if(!message?.document||Number(message.document.size)!==size||message.document.id.toString()!==target.location.id.toString())throw Error('视频已变更，请重新打开');
+   rawMessages.set(id+':'+messageId,message);target=parallelMediaTarget(message,false);return read();
+  }
+ })};
+}
+
 export async function logout() {
   const c = await getClient();
   try{ await c.invoke(new Api.auth.LogOut()); }catch{}

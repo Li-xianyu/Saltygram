@@ -1,4 +1,5 @@
 import { formatDownloadPercent } from './media-download.js';
+import { createMediaStream } from './media-stream.js';
 import { createCachedResource } from './cached-resource.js';
 import { installRoundList } from './round-list.js';
 import { installWatchHaptics } from './watch-haptics.js';
@@ -372,18 +373,31 @@ function videoCard(m,chat){
  const play=document.createElement('button');play.className='video-play';play.setAttribute('aria-label','播放视频');play.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';card.append(play);
  const status=document.createElement('span');status.className='video-status';status.setAttribute('role','status');card.append(status);
  if(info.duration){const duration=document.createElement('span');duration.className='video-duration';const n=Math.floor(info.duration);duration.textContent=Math.floor(n/60)+':'+String(n%60).padStart(2,'0');card.append(duration)}
- let posterURL='',busy=false;
+ let posterURL='',busy=false,stream=null;
  card.loadResource=async()=>{try{posterURL=await resources.load('video-thumb:'+key,async()=>{const blob=await cachedBlob('video-thumb:'+key,()=>telegram.downloadMedia(chat,m.id,undefined,true));return blob?resourceURL(blob):null});if(posterURL&&card.isConnected)poster.src=posterURL}catch{ /* No thumbnail: keep the neutral frame and play control. */ }};
  poster.onerror=()=>poster.removeAttribute('src');visibleResources.observe(card);
  play.onclick=async()=>{
  if(busy)return;busy=true;play.disabled=true;card.classList.add('video-loading');status.textContent='等待下载…';
  try{
- if(info.size>100*1024*1024)throw Error('视频超过 100 MiB，暂不支持播放');
- const url=await mediaDownloads.load('video:'+key,async()=>resourceURL(await cachedBlob('media:'+key,()=>telegram.downloadMedia(chat,m.id,n=>status.textContent=formatDownloadPercent(n)))));
- if(!card.isConnected)return;
+ let url;
+ const existing=scopeKey('media:'+key),cached=existing?await cacheGet(existing):null;
+ if(cached instanceof Blob)url=resourceURL(cached);
+ else{
+  status.textContent='正在连接…';
+  if(globalThis.isSecureContext&&navigator.serviceWorker){
+   const reader=await telegram.openMediaReader(chat,m.id);
+   stream=await createMediaStream({...reader,key:scopeKey('media:'+key+':chunk'),alive:()=>card.isConnected&&reader.valid()});
+   url=stream?.url;
+  }
+  if(!url){
+   if(info.size>100*1024*1024)throw Error('当前浏览器不支持流式播放，请使用 HTTPS 浏览器打开');
+   url=await mediaDownloads.load('video:'+key,async()=>resourceURL(await cachedBlob('media:'+key,()=>telegram.downloadMedia(chat,m.id,n=>status.textContent=formatDownloadPercent(n)))));
+  }
+ }
+ if(!card.isConnected){stream?.dispose();return}
  const video=document.createElement('video');video.className='inline-video';video.controls=true;video.playsInline=true;video.preload='auto';if(posterURL)video.poster=posterURL;
  video.src=url;video.onwaiting=()=>{status.textContent='缓冲中'};video.onplaying=()=>{status.textContent=''};
- video.onerror=()=>{status.textContent='此编码无法播放';const save=document.createElement('a');save.className='video-save';save.href=url;save.download=info.name||'video';save.textContent='下载视频';if(!card.querySelector('.video-save'))card.append(save)};
+ video.onerror=()=>{status.textContent=video.error?.code===3||video.error?.code===4?'此编码无法播放':'加载失败，请重试';stream?.dispose();stream=null;video.remove();play.hidden=false;const save=document.createElement('button');save.className='video-save';save.textContent='下载视频';save.onclick=async()=>{save.disabled=true;try{if(info.size>100*1024*1024)throw Error('完整下载暂限 100 MiB');const blob=await cachedBlob('media:'+key,()=>telegram.downloadMedia(chat,m.id,n=>status.textContent=formatDownloadPercent(n)));const link=document.createElement('a');link.href=resourceURL(blob);link.download=info.name||'video';link.click()}catch(error){status.textContent=error.message}finally{save.disabled=false}};if(!card.querySelector('.video-save'))card.append(save)};
  card.append(video);play.hidden=true;status.textContent='';
  try{await video.play()}catch{status.textContent=''; /* Native controls remain available if autoplay is blocked. */ }
  }catch(e){status.textContent=e.errorMessage||e.message;play.setAttribute('aria-label','重试播放视频')}
