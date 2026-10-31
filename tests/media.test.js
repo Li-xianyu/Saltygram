@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mediaInfo } from '../public/telegram.js';
+
+test('music metadata retains title, performer and duration for attachment rows',()=>{
+ const media=mediaInfo({id:1,document:{id:2,mimeType:'audio/mpeg',size:100,attributes:[{className:'DocumentAttributeAudio',title:'Song',performer:'Artist',duration:125}]}});
+ assert.equal(media.audioTitle,'Song');assert.equal(media.performer,'Artist');assert.equal(media.duration,125);
+});
 test('photos and playable documents get appropriate resource types', () => {
   assert.equal(mediaInfo({id:1,photo:{}}).kind,'image');
   for (const [mime,kind] of [['video/mp4','video'],['audio/ogg','audio'],['image/webp','image'],['application/pdf','file'],['image/svg+xml','file'],['text/html','file']]) {

@@ -110,8 +110,9 @@ export function mediaInfo(m) {
   // SVG/HTML documents are download-only: never execute untrusted media.
   const sticker=doc.attributes?.find(a=>a.className==='DocumentAttributeSticker');
   const video=doc.attributes?.find(a=>a.className==='DocumentAttributeVideo');
+  const audio=doc.attributes?.find(a=>a.className==='DocumentAttributeAudio');
   const kind = sticker ? 'sticker' : /^image\/(jpeg|png|webp|gif|avif|bmp|x-ms-bmp)$/.test(mime) ? 'image' : mime.startsWith('video/') ? 'video' : mime.startsWith('audio/') ? 'audio' : 'file';
-  return { kind, mime, duration:video?.duration,width:video?.w,height:video?.h,round:!!video?.roundMessage, name: filename, size: Number(doc.size), key:doc.id?.toString(), emoji:sticker?.alt, stickerType:mime==='application/x-tgsticker'?'tgs':mime==='video/webm'?'video':'static', hasSet:!!sticker?.stickerset&&sticker.stickerset.className!=='InputStickerSetEmpty' };
+  return { kind, mime, duration:video?.duration??audio?.duration,audioTitle:audio?.title||'',performer:audio?.performer||'',voice:!!audio?.voice,width:video?.w,height:video?.h,round:!!video?.roundMessage, name: filename, size: Number(doc.size), key:doc.id?.toString(), emoji:sticker?.alt, stickerType:mime==='application/x-tgsticker'?'tgs':mime==='video/webm'?'video':'static', hasSet:!!sticker?.stickerset&&sticker.stickerset.className!=='InputStickerSetEmpty' };
 }
 function displayName(entity){return [entity?.firstName,entity?.lastName].filter(Boolean).join(' ')||entity?.title||entity?.username||'未知用户'}
 function serialize(m,id){
@@ -162,7 +163,8 @@ export async function downloadMedia(id, messageId, progress, thumbnail = false) 
   if (!m && !id.startsWith('stickerset:')) { [m] = await c.getMessages(peers.get(id)||id,{ids:[messageId]});if(m)rawMessages.set(key,m) }
   if (!m) throw Error('请重新加载会话后重试');
   const sizes=(m.photo?.sizes||m.document?.thumbs||[]).filter(s=>s.w&&s.h).sort((a,b)=>Math.max(a.w,a.h)-Math.max(b.w,b.h));
-  const thumb= sizes.filter(s=>Math.max(s.w,s.h)<=640).at(-1)||sizes[0];
+  const thumbLimit=thumbnail==='small'?160:thumbnail==='large'?1280:640;
+  const thumb=sizes.filter(s=>Math.max(s.w,s.h)<=thumbLimit).at(-1)||sizes[0];
   if(thumbnail&&mediaInfo(m)?.kind==='video'&&!thumb)return null;
   let lastProgress=0;
   const report=(received,total)=>{const ratio=progressRatio(received,total,mediaInfo(m)?.size);if(ratio!==undefined){lastProgress=Math.max(lastProgress,ratio);progress?.(lastProgress)}};
@@ -326,7 +328,7 @@ export async function getConversationItems(id,{saved=false,filter='visual',offse
  let result;
  if(saved)result=await c.invoke(new Api.messages.GetSavedHistory({peer,...params}));
  else{
-  const filters={visual:Api.InputMessagesFilterPhotoVideo,file:Api.InputMessagesFilterDocument,audio:Api.InputMessagesFilterMusic,voice:Api.InputMessagesFilterRoundVoice,link:Api.InputMessagesFilterUrl};
+  const filters={visual:Api.InputMessagesFilterPhotoVideo,photo:Api.InputMessagesFilterPhotos,video:Api.InputMessagesFilterVideo,file:Api.InputMessagesFilterDocument,audio:Api.InputMessagesFilterMusic,voice:Api.InputMessagesFilterRoundVoice,link:Api.InputMessagesFilterUrl};
   result=await c.invoke(new Api.messages.Search({peer,q:'',filter:new (filters[filter]||filters.visual)(),minDate:0,maxDate:0,...params}));
  }
  if(c!==client)throw Error('账号已切换');rememberEntities(result);const mediaPeer=saved?memory.owner:id;

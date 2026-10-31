@@ -40,6 +40,16 @@ test('native timeline installs no JavaScript scroll work or geometry observers',
  const win={CSS:{supports:()=>true},addEventListener:fail,requestAnimationFrame:fail,MutationObserver:class{constructor(){fail()}},ResizeObserver:class{constructor(){fail()}}};
  const list=installRoundList(root,{win,doc:{}});list.refresh();list.refresh();assert.equal(added,1);list.destroy();assert.equal(removed,1);
 });
+
+test('nested information blocks animate in a chat without adding layout reads to scroll frames',()=>{
+ const events={},frames=[];let reads=0;
+ const row={hidden:false,getBoundingClientRect(){reads++;return {top:20,bottom:60}},style:{removeProperty(k){delete this[k]}}};
+ const root={children:[],querySelectorAll:selector=>{assert.equal(selector,'.info-round-item');return [row]}};
+ const win={innerWidth:240,innerHeight:240,scrollY:0,addEventListener:(n,f)=>events[n]=f,removeEventListener:n=>delete events[n],requestAnimationFrame:f=>frames.push(f)};
+ const doc={body:{classList:{contains:name=>name==='chat-open'}}};
+ const list=installRoundList(root,{win,doc,rowSelector:'.info-round-item',allowChat:true});frames.shift()();assert.equal(reads,1);assert.ok(row.style.transform);
+ reads=0;win.scrollY=20;events.scroll();frames.shift()();assert.equal(reads,0);list.destroy();assert.equal(events.scroll,undefined);
+});
 test('preview refresh reuses geometry; structural changes invalidate it; suspension stops frames',()=>{
  const events={},frames=[],observers=[];let reads=0,writes=0,hidden=false,transform='';
  const row={classList:{contains:()=>true},getBoundingClientRect(){reads++;return {top:80,bottom:124}},style:{set transform(v){writes++;transform=v},get transform(){throw Error('no CSSOM reads')},removeProperty(){writes++;transform=''}}};

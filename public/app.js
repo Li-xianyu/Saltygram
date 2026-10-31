@@ -14,10 +14,12 @@ import { createResourceLoader, avatarThumbnail } from './resources.js';
 import { installNavigation } from './navigation.js';
 import { createConversationInfo } from './conversation-info.js';
 import { installRoundPreview } from './round-preview.js';
+import { createGalleryTile } from './gallery-tile.js';
 installRoundPreview();
 const resources=createResourceLoader(4);
 const mediaDownloads=createResourceLoader(2);
 const avatarResources=createResourceLoader(4);
+const galleryDetails=createResourceLoader(1);
 const objectURLs=new Set();
 function scopeKey(key){const scope=telegram.cacheScope();return scope?scope+':'+key:null}
 async function cachedBlob(key,load){const generation=cacheGeneration();const scoped=scopeKey(key);const hit=scoped?await cacheGet(scoped):null;if(hit instanceof Blob)return hit;const blob=await load();if(blob&&scoped&&cacheGeneration()===generation)await cachePut(scoped,blob);return blob}
@@ -68,11 +70,33 @@ function renderDialogs(){
 function watchDocumentScroll(){return window.innerWidth<=480&&window.innerHeight<=540}
 function messageScroller(){return watchDocumentScroll()?(document.scrollingElement||document.documentElement):$('.conversation')}
 let infoChatScroll=0;
-const infoPage=createConversationInfo({root:$('#conversationInfo'),telegram,avatar,mediaCard,readCache:snapshotGet,writeCache:snapshotPut,watch:watchDocumentScroll,cacheVersion:cacheGeneration,scope:()=>telegram.settings().owner||telegram.cacheScope(),release:root=>{for(const el of root.querySelectorAll('.avatar,.auto-image,.video-card,.sticker')){visibleResources.unobserve(el);const animation=stickerAnimations.get(el);if(animation){animation.destroy();stickerAnimations.delete(el)}}},onBack:()=>nav.goBack(),onMember:item=>{
+const infoPage=createConversationInfo({root:$('#conversationInfo'),telegram,avatar,galleryTile:infoGalleryTile,onOpenItem:openInfoItem,readCache:snapshotGet,writeCache:snapshotPut,watch:watchDocumentScroll,cacheVersion:cacheGeneration,scope:()=>telegram.settings().owner||telegram.cacheScope(),release:root=>{if(root.matches('.info-media-tile'))visibleResources.unobserve(root);for(const el of root.querySelectorAll('.avatar,.auto-image,.video-card,.sticker,.info-media-tile')){visibleResources.unobserve(el);const animation=stickerAnimations.get(el);if(animation){animation.destroy();stickerAnimations.delete(el)}}},onBack:()=>nav.goBack(),onMember:item=>{
  nav.goBack();if(!dialogs.some(d=>d.id===item.id))dialogs.unshift({...item,personal:true,unread:0,text:''});select(item.id);
 }});
 function closeConversationInfo(){const open=document.body.classList.contains('info-open');infoPage.hide();if(open)messageScroller().scrollTop=infoChatScroll}
 function openConversationInfo(record=true,tab){const dialog=dialogs.find(d=>d.id===active);if(!dialog)return;if(!document.body.classList.contains('info-open'))infoChatScroll=messageScroller().scrollTop;if(record)nav.push('info');void infoPage.open(dialog,tab);$('#messages').querySelectorAll('video,audio').forEach(el=>el.pause());if(watchDocumentScroll())messageScroller().scrollTop=0}
+function infoGalleryTile(message,peer,alive){
+ const owner=telegram.settings().owner;
+ return createGalleryTile(message,peer,{alive,observe:el=>visibleResources.observe(el),onOpen:openInfoItem,
+  load:(m,id,quality,stillAlive)=>{
+   const key='gallery:'+id+':'+(m.media.key||m.id)+':'+quality;
+   return (quality==='small'?resources:galleryDetails).load((owner||'memory')+':'+key,async()=>{
+    if(!stillAlive()||telegram.settings().owner!==owner)throw Error('预览已关闭');
+    const blob=await cachedBlob(key,()=>telegram.downloadMedia(id,m.id,undefined,quality));return blob?resourceURL(blob):null;
+   });
+  }
+ });
+}
+async function openInfoItem(message,peer,preview){
+ const viewer=$('#viewerContent');viewer.replaceChildren();
+ if(message.media?.kind==='image'){
+  const image=document.createElement('img');image.alt='图片';if(preview)image.src=preview;viewer.append(image);$('#mediaViewer').showModal();
+  try{const blob=await mediaDownloads.load('info-full:'+peer+':'+message.id,()=>cachedBlob('full:'+peer+':'+(message.media.key||message.id),()=>telegram.downloadMedia(peer,message.id)));if(image.isConnected)image.src=resourceURL(blob)}catch{toast('原图加载失败')}
+ }else{
+  if(message.media){const card=mediaCard(message,peer);viewer.append(card);$('#mediaViewer').showModal();if(message.media.kind==='video')card.querySelector('.video-play')?.click()}
+  else{const text=document.createElement('div');text.className='info-item-text';text.append(richText(message.text||'',message.entities));viewer.append(text);$('#mediaViewer').showModal()}
+ }
+}
 const nav=installNavigation({
  onBackToList:()=>{closeConversationInfo();document.body.classList.remove('chat-open');switchNav('chat',{record:false});if(watchDocumentScroll())messageScroller().scrollTop=0},
  onContacts:()=>{closeConversationInfo();document.body.classList.remove('chat-open');switchNav('contacts',{record:false});if(watchDocumentScroll())messageScroller().scrollTop=0},
@@ -438,7 +462,8 @@ function imageCard(m,chat){
  card.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();card.click()}};
  return card;
 }
-$('#closeMediaLibrary').onclick=()=>{$('#mediaLibrary').close();$('#mediaList').querySelectorAll('video,audio').forEach(el=>el.pause());$('#mediaList').querySelectorAll('.auto-image,.sticker,.video-card').forEach(el=>visibleResources.unobserve(el));$('#mediaList').replaceChildren()};$('#closeViewer').onclick=()=>{$('#mediaViewer').close();$('#viewerContent').replaceChildren()};
+$('#closeMediaLibrary').onclick=()=>{$('#mediaLibrary').close();$('#mediaList').querySelectorAll('video,audio').forEach(el=>el.pause());$('#mediaList').querySelectorAll('.auto-image,.sticker,.video-card').forEach(el=>visibleResources.unobserve(el));$('#mediaList').replaceChildren()};$('#closeViewer').onclick=()=>{$('#viewerContent').querySelectorAll('video,audio').forEach(el=>el.pause());$('#mediaViewer').close();$('#viewerContent').replaceChildren()};
+$('#mediaViewer').addEventListener('close',()=>{$('#viewerContent').querySelectorAll('video,audio').forEach(el=>el.pause());$('#viewerContent').querySelectorAll('.auto-image,.sticker,.video-card').forEach(el=>visibleResources.unobserve(el));$('#viewerContent').replaceChildren()});
 window.addEventListener('beforeunload',()=>{for(const url of mediaCache.values())URL.revokeObjectURL(url);for(const url of objectURLs)URL.revokeObjectURL(url)});
 
 $('#testConnection').onclick=async()=>{const b=$('#testConnection');b.disabled=true;$('#authError').textContent='正在通过 WSS 连接 Telegram…';try{await telegram.configure($('#apiId').value.trim(),$('#apiHash').value.trim(),$('#remember').checked);await telegram.testConnection();$('#authError').textContent='直连成功，可以获取验证码登录。'}catch(e){$('#authError').textContent=e.errorMessage||e.message}finally{b.disabled=false}};
@@ -636,7 +661,7 @@ $('#confirmConversationAction').onclick=async()=>{
  const keys=new Set([...Object.keys(history),...pages.keys(),...readStates.keys(),threadKey(id,0)].filter(k=>k.startsWith(id+':')));let hasNew=false;
  for(const key of keys){changed(key);const remaining=(history[key]||[]).filter(m=>m.id>cutoff);if(remaining.length)hasNew=true;history[key]=action==='leave'?[]:remaining;for(const m of history[key])if(m.replyId<=cutoff&&m.replyId)m.reply={id:m.replyId,text:'原消息已清理',unavailable:true};pages.set(key,{more:false,busy:false,around:false});readStates.delete(key);initialUnread.delete(key)}
  const remove=result.removed&&(action==='leave'||!hasNew);if(remove){removedConversations.set(id,cutoff);dialogs=dialogs.filter(d=>d.id!==id)}else{const d=dialogs.find(d=>d.id===id),last=(history[threadKey(id,0)]||[]).at(-1);if(d){d.text=last?messagePreview(last):'';d.lastMessageId=last?.id||0;d.date=last?.date;d.time=last?time(last.date):'';d.unread=0;d.unreadMark=false;d.readState={...d.readState,unread:0,inbox:cutoff}}}
- const scope=telegram.cacheScope();if(scope){try{await removeCachePrefixes(['snapshot:messages:','snapshot:info-profile:','snapshot:info-list:','snapshot:info-photo:','image:','video-thumb:','full:','media:',...(remove?['avatar:']:[])].map(prefix=>scope+':'+prefix+id+':'))}catch{toast('Telegram 已处理，本地缓存清理失败，请手动清理缓存')}}
+ const scope=telegram.cacheScope();if(scope){try{await removeCachePrefixes(['snapshot:messages:','snapshot:info-profile:','snapshot:info-list:','snapshot:info-photo:','gallery:','image:','video-thumb:','full:','media:',...(remove?['avatar:']:[])].map(prefix=>scope+':'+prefix+id+':'))}catch{toast('Telegram 已处理，本地缓存清理失败，请手动清理缓存')}}
  for(const key of keys)if(history[key]?.length)saveThread(key);snapshotPut('dialogs',dialogs);
  if(active===id){if(remove)exitConversation();else{generation++;readCandidate=0;clearTimeout(readTimer);clearCompose();$('#message').value='';renderMessages('bottom')}}
  renderDialogs();$('#conversationActionDialog').close();toast(result.warning||(action==='clear'?'聊天记录已清空':action==='delete'?'会话已删除':info.broadcast?'已退订频道':'已退出群组'));

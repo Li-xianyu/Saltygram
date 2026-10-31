@@ -13,7 +13,7 @@ export function roundRowOpacity(y){
  const distance=Math.min(1,Math.abs(y-.5)*2);
  return 1-distance*distance;
 }
-export function installRoundList(root,{win=window,doc=document,isVisible=()=>true}={}){
+export function installRoundList(root,{win=window,doc=document,isVisible=()=>true,rowSelector=null,allowChat=false}={}){
  // CSS owns this path completely: no scroll handler, RAF or geometry observer.
  // Keep the CSS keyframes independent: they are the existing native effect.
  if(win.CSS?.supports?.('animation-timeline','view()')){
@@ -24,7 +24,7 @@ export function installRoundList(root,{win=window,doc=document,isVisible=()=>tru
  let items=[],start=0,end=0;
  const reset=item=>{if(item.transform!==null){item.row.style.removeProperty('transform');item.transform=null}if(item.opacity!==null){item.row.style.removeProperty('opacity');item.opacity=null}};
  const lowerBound=value=>{let lo=0,hi=items.length;while(lo<hi){const mid=(lo+hi)>>>1;if(items[mid].center<value)lo=mid+1;else hi=mid}return lo};
- const visible=()=>isVisible()&&win.innerWidth<=480&&win.innerHeight<=540&&!doc.hidden&&!doc.body?.classList?.contains('chat-open')&&!doc.body?.classList?.contains('home-open');
+ const visible=()=>isVisible()&&win.innerWidth<=480&&win.innerHeight<=540&&!doc.hidden&&(allowChat||!doc.body?.classList?.contains('chat-open'))&&!doc.body?.classList?.contains('home-open');
  const draw=()=>{
   queued=false;if(disposed||!active)return;
   const height=win.innerHeight,scroll=win.scrollY||0;
@@ -33,7 +33,7 @@ export function installRoundList(root,{win=window,doc=document,isVisible=()=>tru
    // One batched geometry pass only on structural changes. No width/height
    // queries: scaling uses normalized row centers, not the old circle solver.
    for(let i=start;i<end;i++)reset(items[i]);
-   items=[...root.children].filter(row=>row.classList.contains('dialog-row')).map(row=>{
+   items=(rowSelector?[...root.querySelectorAll(rowSelector)].filter(row=>!row.hidden):[...root.children].filter(row=>row.classList.contains('dialog-row'))).map(row=>{
     const r=row.getBoundingClientRect();return {row,center:(r.top+r.bottom)/2+scroll,transform:null,opacity:null};
    });
    start=end=0;dirty=false;
@@ -75,7 +75,7 @@ export function installRoundList(root,{win=window,doc=document,isVisible=()=>tru
  const refresh=()=>{if(!children){dirty=true;sync()}else if(visible()!==active)sync();else if(dirty)schedule()};
  win.addEventListener('resize',invalidate);doc.addEventListener?.('visibilitychange',sync);
  const Observer=win.MutationObserver;let children,body,resize;
- if(Observer){children=new Observer(invalidate);children.observe(root,{childList:true});if(doc.body){body=new Observer(invalidate);body.observe(doc.body,{attributes:true,attributeFilter:['class']})}}
+ if(Observer){children=new Observer(invalidate);children.observe(root,{childList:true,subtree:!!rowSelector});if(doc.body){body=new Observer(invalidate);body.observe(doc.body,{attributes:true,attributeFilter:['class']})}}
  if(win.ResizeObserver){resize=new win.ResizeObserver(invalidate);resize.observe(root)}
  doc.fonts?.ready?.then(invalidate);sync();
  return {refresh,destroy(){
