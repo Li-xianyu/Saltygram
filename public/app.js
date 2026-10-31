@@ -392,6 +392,7 @@ function persistVisualSettings(){try{localStorage.setItem(SETTINGS_KEY,JSON.stri
 function applyVisualSettings(){
  document.documentElement.style.setProperty('--message-font-size',visualSettings.fontSize+'px');
  document.documentElement.style.setProperty('--bubble-radius',visualSettings.radius+'px');
+ document.documentElement.style.setProperty('--ui-scale',visualSettings.scale);
  document.documentElement.style.zoom=visualSettings.scale;
 }
 function openSettings(){
