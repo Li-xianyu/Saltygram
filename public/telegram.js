@@ -140,6 +140,7 @@ export async function sendMessage(id,text,topic=0,replyTo=0){
  if(!text.trim()||text.length>4096)throw Error('消息须为 1–4096 个字符');const {c,peer}=await readyPeer(id);
  const m=serialize(await c.sendMessage(peer,{message:text,parseMode:false,...(replyTo||topic?{replyTo:replyTo||topic}:{}),...(topic?{topMsgId:topic}:{})}),id);return (await hydrateReplies([m],id))[0];
 }
+export async function saveMessage(id,messageId){const {c,peer}=await readyPeer(id);await c.forwardMessages('me',{messages:[messageId],fromPeer:peer});return {saved:true}}
 export async function editMessage(id,messageId,text){const {c,peer}=await readyPeer(id);const m=await c.editMessage(peer,{message:messageId,text,parseMode:false});return (await hydrateReplies([serialize(m,id)],id))[0]}
 export async function deleteMessage(id,messageId,revoke=false){const {c,peer}=await readyPeer(id);await c.deleteMessages(peer,[messageId],{revoke});rawMessages.delete(id+':'+messageId)}
 export async function getReadState(id,topic=0){

@@ -87,7 +87,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   const ownContextRow=document.querySelector('[data-message-id="105"]');
   ownContextRow.oncontextmenu({target:ownContextRow,preventDefault(){prevented++},stopPropagation(){},clientX:990,clientY:790});
   assert.equal(document.querySelector('#conversationMenu').hidden,true);
-  assert.deepEqual([...document.querySelector('#messageMenu').children].map(b=>b.textContent),['回复','复制','编辑','删除']);
+  assert.deepEqual([...document.querySelector('#messageMenu').children].map(b=>b.textContent),['回复','复制','编辑','删除','收藏']);
   assert.ok(parseInt(document.querySelector('#messageMenu').style.left)<990);
   assert.ok(parseInt(document.querySelector('#messageMenu').style.top)<790);
   assert.equal(document.querySelector('#messages .message-text a').getAttribute('href'),'https://example.com/');

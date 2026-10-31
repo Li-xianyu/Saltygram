@@ -254,7 +254,8 @@ const NAV_SVG={
  me:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M5.5 17c.5-3 6.5-3 7 0M15 9h3M15 13h3"/></svg>',
  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
  logout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
- cache:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>'
+ cache:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>',
+ settings:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>'
 };
 function setStatus(state){const dot=$('#statusDot');dot.classList.toggle('online',state==='online');dot.classList.toggle('connecting',state==='connecting')}
 let logoutArmed=null,logoutPending=false;
@@ -374,15 +375,48 @@ function renderMenu(){
   b.onclick=()=>{closeMenu();switchNav(key)};
   panel.append(b);
  }
- const cache=document.createElement('button');cache.className='menu-item';cache.type='button';
- cache.innerHTML=NAV_SVG.cache+'本地缓存';
- cache.onclick=()=>{closeMenu();$('#storageDialog').showModal();showStorage()};
- panel.append(cache);
+ const settings=document.createElement('button');settings.className='menu-item';settings.type='button';
+ settings.innerHTML=NAV_SVG.settings+'设置';
+ settings.onclick=()=>{closeMenu();openSettings()};
+ panel.append(settings);
 }
 $('#menuButton').onclick=()=>{if($('#menuPanel').hidden){renderMenu();$('#menuPanel').hidden=false;$('#menuButton').setAttribute('aria-expanded','true')}else closeMenu()};
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('[data-menu-logout]'))resetLogoutConfirmation();if(!e.target.closest('#menuPanel,#menuButton'))closeMenu()});
 document.addEventListener('click',e=>{if(!e.target.closest('[data-menu-logout]'))resetLogoutConfirmation()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeMenu()});
+// 设置页与视觉效果
+const SETTINGS_KEY='xy-settings';
+let visualSettings={fontSize:13,radius:9,scale:1};
+function loadVisualSettings(){try{return Object.assign({fontSize:13,radius:9,scale:1},JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}'))}catch{return {fontSize:13,radius:9,scale:1}}}
+function persistVisualSettings(){try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(visualSettings))}catch{}}
+function applyVisualSettings(){
+ document.documentElement.style.setProperty('--message-font-size',visualSettings.fontSize+'px');
+ document.documentElement.style.setProperty('--bubble-radius',visualSettings.radius+'px');
+ const meta=document.querySelector('meta[name="viewport"]');
+ if(meta)meta.setAttribute('content','width=device-width,initial-scale='+visualSettings.scale+',maximum-scale='+visualSettings.scale);
+}
+function openSettings(){
+ const accounts=telegram.listAccounts(),current=accounts.find(a=>a.active);
+ $('#settingsAccountName').textContent=current?.title||'未登录';
+ const av=$('#settingsAccountAvatar');
+ if(current?.avatarKey)avatar(av,{id:current.owner,title:current.title||'?',avatarKey:current.avatarKey});
+ else av.textContent=(current?.title||'?').slice(0,1);
+ $('#settingsPage').hidden=false;
+}
+function openVisual(){
+ visualSettings=loadVisualSettings();
+ $('#fontSizeSlider').value=visualSettings.fontSize;$('#fontSizeValue').textContent=visualSettings.fontSize;
+ $('#radiusSlider').value=visualSettings.radius;$('#radiusValue').textContent=visualSettings.radius;
+ for(const b of document.querySelectorAll('#scaleSeg button'))b.classList.toggle('selected',Number(b.dataset.scale)===visualSettings.scale);
+ $('#visualPage').hidden=false;
+}
+$('#settingsBack').onclick=()=>$('#settingsPage').hidden=true;
+$('#settingsVisual').onclick=openVisual;
+$('#visualBack').onclick=()=>$('#visualPage').hidden=true;
+$('#fontSizeSlider').oninput=e=>{visualSettings.fontSize=Number(e.target.value);$('#fontSizeValue').textContent=visualSettings.fontSize;applyVisualSettings();persistVisualSettings()};
+$('#radiusSlider').oninput=e=>{visualSettings.radius=Number(e.target.value);$('#radiusValue').textContent=visualSettings.radius;applyVisualSettings();persistVisualSettings()};
+for(const b of document.querySelectorAll('#scaleSeg button'))b.onclick=()=>{visualSettings.scale=Number(b.dataset.scale);for(const x of document.querySelectorAll('#scaleSeg button'))x.classList.toggle('selected',x===b);applyVisualSettings();persistVisualSettings()};
+visualSettings=loadVisualSettings();applyVisualSettings();
 // Touch list headers collapse until the active list reaches its top edge.
 if(matchMedia('(pointer: coarse)').matches){
  const sidebar=$('aside');
@@ -584,11 +618,19 @@ $('#persistCache').onclick=async()=>{const ok=await navigator.storage?.persist?.
 
 function closeMessageMenu(){$('#messageMenu').hidden=true}
 function positionMenu(menu,anchor,event){const rect=anchor.getBoundingClientRect(),box=menu.getBoundingClientRect();menu.style.right='auto';menu.style.left=Math.max(8,Math.min(event?.clientX??rect.right,window.innerWidth-(box.width||190)-8))+'px';menu.style.top=Math.max(8,Math.min(event?.clientY??rect.bottom+5,window.innerHeight-(box.height||180)-8))+'px'}
-function openMessageMenu(m,anchor,event){closeConversationMenu();const menu=$('#messageMenu');menu.replaceChildren();const add=(label,action)=>{const b=document.createElement('button');b.textContent=label;b.setAttribute('role','menuitem');b.onclick=()=>{closeMessageMenu();return action()};menu.append(b)};
- add('回复',()=>setCompose(m));if(m.text)add('复制',()=>navigator.clipboard.writeText(m.text).then(()=>toast('已复制')).catch(()=>toast('复制失败')));if(m.canEdit)add('编辑',()=>setCompose(m,true));if(m.canDelete)add('删除',()=>openDelete(m));
+const MENU_ICONS={
+ reply:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 6 6v4"/></svg>',
+ copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+ edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+ delete:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
+ save:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 8.7l5.4-.8Z"/></svg>'
+};
+async function saveMessage(m){try{await telegram.saveMessage(active,m.id);toast('已收藏到收藏夹')}catch(e){toast(e.errorMessage||e.message)}}
+function openMessageMenu(m,anchor,event){closeConversationMenu();const menu=$('#messageMenu');menu.replaceChildren();const add=(label,action,icon)=>{const b=document.createElement('button');b.innerHTML=icon+label;b.setAttribute('role','menuitem');b.onclick=()=>{closeMessageMenu();return action()};menu.append(b)};
+ add('回复',()=>setCompose(m),MENU_ICONS.reply);if(m.text)add('复制',()=>navigator.clipboard.writeText(m.text).then(()=>toast('已复制')).catch(()=>toast('复制失败')),MENU_ICONS.copy);if(m.canEdit)add('编辑',()=>setCompose(m,true),MENU_ICONS.edit);if(m.canDelete)add('删除',()=>openDelete(m),MENU_ICONS.delete);add('收藏',()=>saveMessage(m),MENU_ICONS.save);
  menu.hidden=false;positionMenu(menu,anchor,event);menu.querySelector('button')?.focus();
 }
-document.addEventListener('pointerdown',e=>{if(!e.target.closest('#messageMenu,.message-menu-trigger'))closeMessageMenu()});
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('#messageMenu'))closeMessageMenu()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeMessageMenu()});
 function openDelete(m){deleteTarget={message:m,chat:active,key:threadKey()};$('#deletePreview').textContent=messagePreview(m);$('#deleteRevoke').checked=!!m.channel;$('#deleteRevoke').disabled=!!m.channel;$('#deleteRevokeWrap').hidden=!m.deleteForEveryone&&!m.channel;$('#deleteHelp').textContent=m.channel?'群组和频道中的删除会对所有成员生效。':'未勾选时仅从自己的消息历史删除。';$('#deleteError').textContent='';$('#deleteDialog').showModal()}
 $('#cancelDelete').onclick=()=>$('#deleteDialog').close();
