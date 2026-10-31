@@ -1,9 +1,10 @@
-// The fallback deliberately preserves the existing curve and 3-decimal output.
+// The fallback deliberately preserves the existing scale curve and 3-decimal
+// output. Horizontal spread (scaleX) was removed so centered rows render at
+// 1:1 without re-rasterizing text, which keeps small watch text sharp.
 export function roundRowTransform(y){
  const distance=Math.min(1,Math.abs(y-.5)*2);
  const scale=y<0||y>1?1:1-.34*distance*distance;
- const spread=y<0||y>1?1:1+.02*(1-distance*distance)**3;
- return 'scale('+scale.toFixed(3)+') scaleX('+spread.toFixed(3)+')';
+ return 'scale('+scale.toFixed(3)+')';
 }
 export function installRoundList(root,{win=window,doc=document}={}){
  // CSS owns this path completely: no scroll handler, RAF or geometry observer.

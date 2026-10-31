@@ -1,8 +1,12 @@
 # Round list performance contract
 
 This optimization preserves the current UI, CSS keyframes, overscan (one viewport
-above and below), scale/spread curve, and native document scrolling. It does not
+above and below), scale curve, and native document scrolling. It does not
 change avatar resolution, row spacing, opacity, hit targets, ordering or features.
+
+The horizontal spread (`scaleX` 1..1.02) was removed later to keep centered rows
+at 1:1 so small watch text is not re-rasterized and blurred by the scale
+animation. The vertical scale curve (0.66..1) is unchanged.
 
 ## Two execution paths
 
