@@ -583,7 +583,15 @@ function stickerCard(m,chat,onSelect=null){
  el.replaceChildren();const animation=lottie.loadAnimation({container:el,renderer:'svg',loop:true,autoplay:!matchMedia('(prefers-reduced-motion: reduce)').matches,animationData:data});stickerAnimations.set(el,animation);
  }else{const node=document.createElement(m.media.stickerType==='video'?'video':'img');node.src=resourceURL(blob);if(node.tagName==='VIDEO'){node.muted=true;node.loop=true;node.autoplay=true;node.playsInline=true}else node.alt=m.media.emoji||'贴纸';node.onerror=()=>{el.textContent=m.media.emoji||'贴纸无法播放'};el.replaceChildren(node)}
  }catch{placeholder.textContent=m.media.emoji||'贴纸加载失败'}};
- visibleResources.observe(el);let clickTimer;el.onclick=()=>{clearTimeout(clickTimer);return new Promise(resolve=>{clickTimer=setTimeout(()=>{Promise.resolve(onSelect?onSelect(m):openStickerSet(chat,m.id)).finally(resolve)},260)})};el.ondblclick=()=>{clearTimeout(clickTimer);if(onSelect)return;const node=el.querySelector('img,video');if(!node?.src)return;$('#viewerContent').replaceChildren();const img=document.createElement('img');img.src=node.src;img.alt=m.media.emoji||'贴纸';$('#viewerContent').append(img);$('#mediaViewer').showModal()};el.onkeydown=e=>{if(e.key==='Enter')el.click()};return el;
+ visibleResources.observe(el);let clickTimer,lastTap=0;
+ el.onclick=()=>{
+  if(onSelect){clearTimeout(clickTimer);return new Promise(resolve=>{clickTimer=setTimeout(()=>{Promise.resolve(onSelect(m)).finally(resolve)},260)})}
+  const now=Date.now();
+  if(now-lastTap<300){lastTap=0;clearTimeout(clickTimer);const node=el.querySelector('img,video');if(!node?.src)return;$('#viewerContent').replaceChildren();const img=document.createElement('img');img.src=node.src;img.alt=m.media.emoji||'贴纸';$('#viewerContent').append(img);$('#mediaViewer').showModal();return}
+  lastTap=now;clearTimeout(clickTimer);
+  return new Promise(resolve=>{clickTimer=setTimeout(()=>{Promise.resolve(openStickerSet(chat,m.id)).finally(resolve)},260)});
+ };
+ el.onkeydown=e=>{if(e.key==='Enter')el.click()};return el;
 }
 function clearStickerGrid(){for(const [el,anim]of stickerAnimations)if(el.closest('#stickerGrid')){anim.destroy();stickerAnimations.delete(el)}$('#stickerGrid').querySelectorAll('.sticker').forEach(el=>visibleResources.unobserve(el));$('#stickerGrid').replaceChildren()}
 function renderStickerPack(){
