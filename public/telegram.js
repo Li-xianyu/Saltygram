@@ -5,36 +5,67 @@ import { UpdateConnectionState } from 'telegram/network/index.js';
 import bigInt from 'big-integer';
 import { TelegramClient, Api, utils } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
-import { clearCache } from './cache.js';
+import { clearCache, removeCachePrefixes } from './cache.js';
 import { computeCheck } from 'telegram/Password.js';
 
 // Browser-only adapter. A future backend can implement this same interface.
-const KEY = 'xy-telegram-account';
+// Accounts are stored as a list; the active account is tracked by owner id.
+const KEY = 'xy-telegram-accounts';
+const ACTIVE = 'xy-telegram-account-active';
 let client, connection, phone, phoneCodeHash;
 const peers = new Map();
 const entities = new Map();
 const rawMessages = new Map();
-export function settings() { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { return {}; } }
+function loadAccounts(){ try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } }
+function persistAccounts(list){ localStorage.setItem(KEY, JSON.stringify(list)); }
+let memory = (()=>{ try{ const active=localStorage.getItem(ACTIVE); return loadAccounts().find(a=>a.owner===active) || {}; }catch{ return {}; } })();
+export function settings(){ return memory; }
+export function listAccounts(){ const current=memory.owner; return loadAccounts().map(a=>({owner:a.owner,title:a.title||('账号 '+String(a.apiId)),active:a.owner===current})); }
 export async function configure(apiId, apiHash, remember) {
   if (!/^\d+$/.test(String(apiId)) || Number(apiId) <= 0 || !/^[a-f0-9]{32}$/i.test(apiHash)) throw Error('请填写有效的 API ID 和 32 位 API Hash');
-  const previous = settings();
   if (client) await client.disconnect();
   client = undefined;
-  const account = { apiId: Number(apiId), apiHash, remember, session: previous.apiId === Number(apiId) && previous.apiHash === apiHash ? previous.session : '' };
-  memory = account;
-  if (remember) localStorage.setItem(KEY, JSON.stringify(account)); else localStorage.removeItem(KEY);
+  const existing = loadAccounts().find(a => a.apiId === Number(apiId) && a.apiHash === apiHash);
+  memory = { apiId: Number(apiId), apiHash, remember, session: existing?.session || '', owner: existing?.owner, title: existing?.title };
 }
-let memory = settings();
 async function getClient() {
   if (!memory.apiId || !memory.apiHash) throw Error('请先填写 API ID 和 API Hash');
   if(!client){client = new TelegramClient(new StringSession(memory.session || ''), memory.apiId, memory.apiHash, { useWSS: true, connectionRetries: 2, requestRetries: 2, timeout: 10, floodSleepThreshold: 0, autoReconnect: true });installRealtime(client)}
   if (!client.connected) { connection ||= client.connect().finally(() => connection = null); await connection; }
   return client;
 }
-async function identify(){const me=await client.getMe();memory.owner=me.id.toString();saveSession()}
-export function cacheScope(){return memory.remember?memory.owner||null:null}
-function saveSession() { memory.session = client.session.save(); if (memory.remember) localStorage.setItem(KEY, JSON.stringify(memory)); }
+async function identify(){
+  const me=await client.getMe();
+  memory.owner=me.id.toString();
+  memory.title=displayName(me);
+  saveAccount();
+}
+function saveAccount(){
+  if(!memory.remember)return;
+  memory.session=client.session.save();
+  const list=loadAccounts().filter(a=>a.owner!==memory.owner);
+  list.unshift(memory);
+  persistAccounts(list);
+  localStorage.setItem(ACTIVE, memory.owner);
+}
+export function cacheScope(){return memory.remember&&memory.owner?memory.owner:null}
+function saveSession(){
+  if(!memory.remember||!memory.owner)return;
+  memory.session=client.session.save();
+  const list=loadAccounts();
+  const i=list.findIndex(a=>a.owner===memory.owner);
+  if(i>=0){ list[i]=memory; persistAccounts(list); }
+}
 export async function restore() { if (!memory.session) return false; const c = await getClient(); const authorized=await c.checkAuthorization();if(authorized)await identify();return authorized; }
+export async function switchAccount(owner){
+  const target=loadAccounts().find(a=>a.owner===owner);
+  if(!target)throw Error('账号不存在');
+  if(client){try{await client.disconnect()}catch{}}
+  client=undefined;
+  peers.clear();entities.clear();rawMessages.clear();
+  memory=target;
+  localStorage.setItem(ACTIVE, owner);
+}
 export async function sendCode(number) {
   if (!/^\+\d{7,15}$/.test(number)) throw Error('请输入带国家区号的手机号码，例如 +86138…');
   const c = await getClient(); phone = number; const result = await c.sendCode(memory, phone); phoneCodeHash = result.phoneCodeHash; return { viaApp: result.isCodeViaApp };
@@ -124,9 +155,18 @@ export async function downloadMedia(id, messageId, progress, thumbnail = false) 
   return new Blob([new Uint8Array(data)], { type: thumbnail&&thumb?'image/jpeg':mediaInfo(m)?.mime || 'application/octet-stream' });
 }
 export async function logout() {
-  const c = await getClient(); await c.invoke(new Api.auth.LogOut()); await c.disconnect(); client = undefined; memory = {}; localStorage.removeItem(KEY); peers.clear(); entities.clear();rawMessages.clear();await clearCache();
+  const c = await getClient();
+  try{ await c.invoke(new Api.auth.LogOut()); }catch{}
+  await c.disconnect(); client = undefined;
+  const scope = memory.owner;
+  const list = loadAccounts().filter(a=>a.owner!==memory.owner);
+  persistAccounts(list);
+  if(list.length)localStorage.setItem(ACTIVE, list[0].owner); else localStorage.removeItem(ACTIVE);
+  memory = {};
+  peers.clear(); entities.clear(); rawMessages.clear();
+  if(scope) await removeCachePrefixes([scope+':']); else await clearCache();
 }
-export async function clearLocal() { if(client) await client.disconnect(); client = undefined; memory = {}; localStorage.removeItem(KEY); await clearCache(); }
+export async function clearLocal() { if(client) await client.disconnect(); client = undefined; memory = {}; localStorage.removeItem(KEY); localStorage.removeItem(ACTIVE); peers.clear(); entities.clear(); rawMessages.clear(); await clearCache(); }
 
 export async function testConnection() { const c = await getClient(); return c.checkAuthorization(); }
 

@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 test('Telegram adapter uses history cursors, explicit replies, edits, deletion scope, real read state and sticker installation',async()=>{
- globalThis.localStorage={getItem:()=>JSON.stringify({apiId:1,apiHash:'0'.repeat(32),remember:true,owner:'1'}),setItem(){}};globalThis.adapterCalls=[];globalThis.adapterEvents=[];
+ globalThis.localStorage={getItem:(key)=>key==='xy-telegram-account-active'?'1':JSON.stringify([{apiId:1,apiHash:'0'.repeat(32),remember:true,owner:'1'}]),setItem(){}};globalThis.adapterCalls=[];globalThis.adapterEvents=[];
  const telegramURL=import.meta.resolve('telegram');
  const mock=`import {Api,utils} from ${JSON.stringify(telegramURL)};export {Api,utils};
  export class TelegramClient{
