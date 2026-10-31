@@ -49,10 +49,10 @@ export async function login({ code, password }) {
 }
 export async function loginWithQrCode(onToken){
  const c=await getClient();
- await c.signInUserWithQrCode({apiId:memory.apiId,apiHash:memory.apiHash},{qrCode:async({token})=>{
+ await c.signInUserWithQrCode({apiId:memory.apiId,apiHash:memory.apiHash},{qrCode:async({token,expires})=>{
   // Browser buffer polyfill lacks 'base64url'; convert base64 manually.
   const url=Buffer.from(token).toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-  onToken(url);
+  onToken(url,expires);
  }});
  await identify();return {authorized:true};
 }

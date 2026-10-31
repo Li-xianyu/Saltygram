@@ -149,21 +149,22 @@ function clearCompose(){composeContext=null;$('#composeContext').hidden=true;$('
 function setCompose(m,edit=false){composeContext={message:m,edit,reply:!edit};$('#composeContext').hidden=false;$('#composeContextLabel').textContent=edit?'编辑消息':'回复 '+(m.senderName||'消息');$('#composeContextText').textContent=messagePreview(m);if(edit)$('#message').value=m.text;$('#message').focus();$('.send').title=edit?'保存编辑':'发送回复'}
 $('#cancelCompose').onclick=()=>{if(composeContext?.edit)$('#message').value='';clearCompose()};
 function openLogin(){phase='phone';$('#credentials').hidden=false;$('#authForm').reset();const saved=telegram.settings();$('#apiId').value=saved.apiId||'';$('#apiHash').value=saved.apiHash||'';$('#remember').checked=saved.remember??true;$('#authInput').type='tel';$('#authInput').placeholder='+86138…';$('#authLabel').textContent='手机号码（含国家区号）';$('#authSubmit').textContent='获取验证码';$('#authHint').textContent='输入手机号码，验证码将发送到 Telegram 或短信。';$('#authError').textContent='';resetQrLoginUI();$('#login').showModal()}
-let qrLoginActive=false;
-function resetQrLoginUI(){qrLoginActive=false;$('#qrLogin').hidden=true;$('#qrLoginButton').hidden=false;$('#qrImage').removeAttribute('src');$('#authHint').hidden=false;$('#authLabel').hidden=false;$('#authInput').hidden=false;$('#authSubmit').hidden=false;$('#credentials').hidden=false}
+let qrLoginActive=false,qrExpireTimer=null;
+function resetQrLoginUI(){qrLoginActive=false;clearInterval(qrExpireTimer);qrExpireTimer=null;$('#qrLogin').hidden=true;$('#qrLoginButton').hidden=false;$('#qrImage').removeAttribute('src');$('#qrImage').hidden=true;$('#qrLoading').hidden=true;$('#qrExpire').textContent='';$('#authHint').hidden=false;$('#authLabel').hidden=false;$('#authInput').hidden=false;$('#authSubmit').hidden=false;$('#credentials').hidden=false}
+function setQrExpire(seconds){clearInterval(qrExpireTimer);const el=$('#qrExpire');let left=seconds;const tick=()=>{el.textContent=left>0?('二维码 '+left+' 秒后过期，将自动刷新'):'二维码即将刷新…';if(left>0)left--};tick();qrExpireTimer=setInterval(tick,1000)}
 async function startQrLogin(){
  const apiId=$('#apiId').value.trim(),apiHash=$('#apiHash').value.trim();
  try{await telegram.configure(apiId,apiHash,$('#remember').checked)}catch(e){$('#authError').textContent=e.message;return}
  qrLoginActive=true;
  $('#credentials').hidden=true;$('#authHint').hidden=true;$('#authLabel').hidden=true;$('#authInput').hidden=true;$('#authSubmit').hidden=true;$('#qrLoginButton').hidden=true;
- $('#authError').textContent='';$('#qrLogin').hidden=false;
+ $('#authError').textContent='';$('#qrLogin').hidden=false;$('#qrLoading').hidden=false;$('#qrImage').hidden=true;$('#qrExpire').textContent='';
  try{
-  await telegram.loginWithQrCode(token=>{QRCode.toDataURL('tg://login?token='+token,{margin:1,width:200}).then(url=>{if(qrLoginActive)$('#qrImage').src=url}).catch(()=>{})});
+  await telegram.loginWithQrCode((token,expires)=>{QRCode.toDataURL('tg://login?token='+token,{margin:1,width:200}).then(url=>{if(!qrLoginActive)return;$('#qrImage').src=url;$('#qrImage').hidden=false;$('#qrLoading').hidden=true;setQrExpire(expires||30)}).catch(()=>{})});
   if(!qrLoginActive)return;
   await loadReal();$('#login').close();
  }catch(e){
   if(qrLoginActive)$('#authError').textContent=e.message==='Account has 2FA enabled.'?'该账号开启了两步验证，请改用验证码方式登录。':e.errorMessage==='AUTH_RESTART'?'认证已重置，请关闭弹窗后重新扫码。':(e.errorMessage||e.message);
- }finally{qrLoginActive=false}
+ }finally{qrLoginActive=false;clearInterval(qrExpireTimer);qrExpireTimer=null}
 }
 $('#qrLoginButton').onclick=startQrLogin;
 $('#cancelQrLogin').onclick=async()=>{qrLoginActive=false;resetQrLoginUI();await telegram.abortQrLogin()};
