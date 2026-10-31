@@ -172,8 +172,11 @@ const NAV_SVG={
  chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-8 8H5l-2 2V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8Z"/></svg>',
  contacts:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
  me:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></svg>',
- plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>'
+ plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+ logout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
+ cache:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>'
 };
+function setStatus(state){const dot=$('#statusDot');dot.classList.toggle('online',state==='online');dot.classList.toggle('connecting',state==='connecting')}
 function closeMenu(){$('#menuPanel').hidden=true;$('#menuButton').setAttribute('aria-expanded','false')}
 function switchNav(key){
  document.body.classList.toggle('nav-contacts',key==='contacts');
@@ -208,6 +211,12 @@ function renderMenu(){
  add.innerHTML=NAV_SVG.plus+'添加新账号';
  add.onclick=()=>{closeMenu();openLogin()};
  panel.append(add);
+ if(connected){
+  const logout=document.createElement('button');logout.className='menu-item';logout.type='button';
+  logout.innerHTML=NAV_SVG.logout+'退出当前账号';
+  logout.onclick=async()=>{closeMenu();try{await api('/logout',{});location.reload()}catch(e){toast(e.message)}};
+  panel.append(logout);
+ }
  divider();
  for(const [key,label] of [['chat','聊天'],['contacts','联系人'],['me','我的']]){
   const b=document.createElement('button');b.className='menu-item';b.type='button';
@@ -215,6 +224,10 @@ function renderMenu(){
   b.onclick=()=>{closeMenu();switchNav(key)};
   panel.append(b);
  }
+ const cache=document.createElement('button');cache.className='menu-item';cache.type='button';
+ cache.innerHTML=NAV_SVG.cache+'本地缓存';
+ cache.onclick=()=>{closeMenu();$('#storageDialog').showModal();showStorage()};
+ panel.append(cache);
 }
 $('#menuButton').onclick=()=>{if($('#menuPanel').hidden){renderMenu();$('#menuPanel').hidden=false;$('#menuButton').setAttribute('aria-expanded','true')}else closeMenu()};
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#menuPanel,#menuButton'))closeMenu()});
@@ -231,10 +244,10 @@ if(matchMedia('(pointer: coarse)').matches){
  };
  $('#dialogs').addEventListener('scroll',applyTopBar,{passive:true});
  window.addEventListener('scroll',applyTopBar,{passive:true});
-}$('#accountAction').onclick=async()=>{if(!connected)openLogin();else{try{await api('/logout',{});location.reload()}catch(e){toast(e.message)}}};$('#closeLogin').onclick=()=>$('#login').close();
+}$('#closeLogin').onclick=()=>$('#login').close();
 $('#authForm').onsubmit=async e=>{e.preventDefault();const b=$('#authSubmit');b.disabled=true;$('#authError').textContent='';try{const value=$('#authInput').value.trim();if(phase==='phone'){await telegram.configure($('#apiId').value.trim(),$('#apiHash').value.trim(),$('#remember').checked);const data=await api('/auth/code',{phone:value.replace(/\s/g,'')});phase='code';$('#credentials').hidden=true;$('#authLabel').textContent='登录验证码';$('#authHint').textContent=data.viaApp?'请查看 Telegram 官方会话中的验证码。':'请查看 Telegram 或短信中的验证码。';$('#authInput').value='';$('#authInput').type='text';$('#authInput').placeholder='输入验证码';b.textContent='登录'}else{const result=await api('/auth/login',phase==='password'?{password:$('#authInput').value}:{code:value});if(result.passwordRequired){phase='password';$('#authLabel').textContent='两步验证密码';$('#authHint').textContent='你的账号开启了两步验证，请输入密码。';$('#authInput').value='';$('#authInput').type='password';$('#authInput').placeholder='输入两步验证密码'}else{await loadReal();$('#login').close()}}}catch(e){$('#authError').textContent=e.message}finally{b.disabled=false}};
 async function loadReal(){
- const cached=await snapshotGet('dialogs');connected=true;document.body.classList.add('connected');$('#mode').textContent='已连接';$('#accountAction').textContent='退出';
+ const cached=await snapshotGet('dialogs');connected=true;document.body.classList.add('connected');setStatus('online');
  if(!active){updateStartPage();$('#emptyState').hidden=false}
  if(cached&&!dialogs.length){dialogs=cached;renderDialogs()}
  try{const data=await api('/dialogs');dialogs=mergeDialogSnapshot(data);snapshotPut('dialogs',dialogs);renderDialogs()}catch(e){if(!cached)throw e;toast('当前显示本地会话，网络同步失败')}
@@ -330,8 +343,8 @@ $('#emptyConnect').onclick=openLogin;
 renderDialogs();
 async function bootstrap(){
  restoring=!!telegram.settings().session;updateStartPage();
- const cached=await snapshotGet('dialogs');if(cached){dialogs=cached;renderDialogs();$('#mode').textContent='同步中';updateStartPage()}
- try{if(await telegram.restore())await loadReal();else if(cached){dialogs=[];history={};active='';document.body.classList.remove('has-chat','chat-open');renderDialogs();$('#mode').textContent='未连接'}}catch(e){$('#mode').textContent=cached?'离线缓存':'未连接';toast('网络同步失败：'+(e.errorMessage||e.message))}finally{restoring=false;updateStartPage()}
+ const cached=await snapshotGet('dialogs');if(cached){dialogs=cached;renderDialogs();setStatus('connecting');updateStartPage()}
+ try{if(await telegram.restore())await loadReal();else if(cached){dialogs=[];history={};active='';document.body.classList.remove('has-chat','chat-open');renderDialogs();setStatus('offline')}}catch(e){setStatus('offline');toast('网络同步失败：'+(e.errorMessage||e.message))}finally{restoring=false;updateStartPage()}
 }
 queueMicrotask(bootstrap);
 
@@ -400,7 +413,7 @@ async function sendPickedSticker(m){
  loading=true;try{const sent=await telegram.sendSticker(id,currentPack.id,m.id,topic,context?.reply?context.message.id:0);changed(key);history[key]=mergePage(history[key]||[],[sent]);saveThread(key);if(threadKey()===key){clearCompose();renderMessages('bottom')}$('#stickerPack').close();clearStickerGrid()}catch(e){toast(e.errorMessage||e.message)}finally{loading=false}
 }
 async function showStorage(){const s=await cacheStats();$('#cacheUsage').textContent='本地缓存 '+bytes(s.bytes)+' / '+bytes(s.limit);$('#cacheQuota').textContent='浏览器配额 '+(s.quota?bytes(s.quota):'未知')+' · '+s.count+' 项';$('#cachePersistence').textContent=s.persistent?'已获得持久存储保护':'浏览器可能在空间不足时回收缓存'}
-$('#storageButton').onclick=()=>{$('#storageDialog').showModal();showStorage()};$('#closeStorage').onclick=()=>$('#storageDialog').close();
+$('#closeStorage').onclick=()=>$('#storageDialog').close();
 $('#clearCache').onclick=async()=>{await clearCache();location.reload()};
 $('#persistCache').onclick=async()=>{const ok=await navigator.storage?.persist?.();toast(ok?'已启用持久存储保护':'浏览器未授予持久存储保护');showStorage()};
 
@@ -442,7 +455,7 @@ async function performRecovery(){if(!connected||polling)return;polling=true;try{
 function requestRecovery(delay=150){clearTimeout(dialogSyncTimer);dialogSyncTimer=setTimeout(performRecovery,delay)}
 
 function receiveUpdate(event){
- if(event.kind==='connection'){if(connected){$('#mode').textContent=event.online?'已连接':'重连中';if(event.online)requestRecovery()}return}
+ if(event.kind==='connection'){if(connected){setStatus(event.online?'online':'connecting');if(event.online)requestRecovery()}return}
  if(event.kind==='sync'){requestRecovery();return}
  if(event.kind==='read'){
   const key=threadKey(event.chat,event.topic||0);const old=readStates.get(key)||dialogs.find(d=>d.id===event.chat)?.readState||{};const state={...old};
