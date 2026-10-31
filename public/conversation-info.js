@@ -31,12 +31,18 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,onOpenI
  const canCache=(version,id)=>valid(version,id)&&cacheVersion()===cacheEpoch;
  const text=(selector,value)=>{$(selector).textContent=value};
  function stop(){root.querySelectorAll('video,audio').forEach(el=>el.pause());release(root);if(photoURL){URL.revokeObjectURL(photoURL);photoURL=null}}
- function hide(){generation++;round?.destroy();round=null;stop();root.hidden=true;document.body.classList.remove('info-open');root.removeEventListener('wheel',onWheel);document.removeEventListener('pointerdown',onDocPointer);root.replaceChildren();records.clear();pages.clear();renderedKey=''}
- function onWheel(e){
+ function hide(){generation++;round?.destroy();round=null;stop();root.hidden=true;document.body.classList.remove('info-open');if(typeof window!=='undefined')window.removeEventListener('scroll',onScroll);root.removeEventListener('scroll',onScroll);document.removeEventListener('pointerdown',onDocPointer);root.replaceChildren();records.clear();pages.clear();renderedKey=''}
+ let lastScrollY=0,lastDelta=0,sameRun=0;
+ const scrollTop=()=>watch()?(document.scrollingElement||document.documentElement).scrollTop:root.scrollTop;
+ function onScroll(){
   if(tab!=='media'||root.hidden||!watch())return;
-  e.preventDefault();
-  const next=Math.min(6,Math.max(2,columns+(e.deltaY>0?-1:1)));
-  if(next!==columns){columns=next;paintPage()}
+  const y=scrollTop();
+  const delta=Math.round(y-lastScrollY);
+  lastScrollY=y;
+  if(!delta)return;
+  if(lastDelta&&Math.abs(delta-lastDelta)<=2){
+   if(++sameRun>=2){sameRun=0;lastDelta=0;columns=Math.min(6,Math.max(2,columns+(delta>0?-1:1)));paintPage()}
+  }else{sameRun=0;lastDelta=delta}
  }
  function onDocPointer(e){
   if(e.target.closest('.info-filter'))return;
@@ -117,7 +123,7 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,onOpenI
  async function open(dialog,initialTab){
   round?.destroy();round=null;stop();records=new Map();renderedKey='';owner=scope();cacheEpoch=cacheVersion();const version=++generation,id=dialog.id;current=dialog;pages=new Map();tab=initialTab||(dialog.group||dialog.channel?'members':'media');filter='visual';root.hidden=false;document.body.classList.add('info-open');
   root.innerHTML='<div class="info-toolbar"><button class="icon info-back" aria-label="返回聊天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button><span>会话信息</span></div><div class="info-hero"><div class="info-backdrop" aria-hidden="true"></div><div class="info-avatar avatar"></div></div><h2 class="info-name"></h2><p class="info-status"></p><div class="info-link" hidden></div><div class="info-tabs" role="tablist" aria-label="会话内容">'+INFO_TABS.map(([key,label])=>'<button role="tab" data-info-tab="'+key+'">'+label+'</button>').join('')+'</div><div class="info-filter" hidden><span>类型</span><button type="button" class="info-filter-trigger" aria-haspopup="listbox" aria-expanded="false"><span class="info-filter-value">全部</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="info-filter-menu" role="listbox" hidden><button type="button" role="option" data-filter="visual" class="selected">全部</button><button type="button" role="option" data-filter="photo">图片</button><button type="button" role="option" data-filter="video">视频</button></div></div><div class="info-list"></div><p class="info-load-status" role="status"></p><button class="info-more">加载更多</button>';
-  $('.info-back').onclick=onBack;$('.info-more').onclick=()=>loadPage();const filterTrigger=$('.info-filter-trigger'),filterMenu=$('.info-filter-menu');filterTrigger.onclick=()=>{const show=filterMenu.hidden;filterMenu.hidden=!show;filterTrigger.setAttribute('aria-expanded',String(!show))};for(const option of filterMenu.querySelectorAll('button'))option.onclick=()=>{filter=option.dataset.filter;$('.info-filter-value').textContent=option.textContent;for(const b of filterMenu.querySelectorAll('button')){const s=b.dataset.filter===filter;b.classList.toggle('selected',s);b.setAttribute('aria-selected',String(s))}filterMenu.hidden=true;filterTrigger.setAttribute('aria-expanded','false');loadPage()};root.addEventListener('wheel',onWheel,{passive:false});document.addEventListener('pointerdown',onDocPointer);
+  $('.info-back').onclick=onBack;$('.info-more').onclick=()=>loadPage();const filterTrigger=$('.info-filter-trigger'),filterMenu=$('.info-filter-menu');filterTrigger.onclick=()=>{const show=filterMenu.hidden;filterMenu.hidden=!show;filterTrigger.setAttribute('aria-expanded',String(!show))};for(const option of filterMenu.querySelectorAll('button'))option.onclick=()=>{filter=option.dataset.filter;$('.info-filter-value').textContent=option.textContent;for(const b of filterMenu.querySelectorAll('button')){const s=b.dataset.filter===filter;b.classList.toggle('selected',s);b.setAttribute('aria-selected',String(s))}filterMenu.hidden=true;filterTrigger.setAttribute('aria-expanded','false');loadPage()};root.addEventListener('scroll',onScroll,{passive:true});if(typeof window!=='undefined')window.addEventListener('scroll',onScroll,{passive:true});lastScrollY=scrollTop();lastDelta=0;sameRun=0;document.addEventListener('pointerdown',onDocPointer);
   for(const button of root.querySelectorAll('[data-info-tab]'))button.onclick=()=>{tab=button.dataset.infoTab;loadPage()};
   root.classList.add('info-round');for(const child of root.children)if(!child.classList.contains('info-list'))child.classList.add('info-round-item');
   round=roundList(root,{rowSelector:'.info-round-item',allowChat:true,isVisible:()=>!root.hidden&&document.body.classList.contains('info-open')});
