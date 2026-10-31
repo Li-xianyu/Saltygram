@@ -1,4 +1,4 @@
-# XY Telegram 0.4 — 浏览器直连
+# Saltygram 0.4 — 浏览器直连
 
 纯前端 Telegram 客户端。GramJS 通过 WSS 直接连接 Telegram，无业务后端。
 
