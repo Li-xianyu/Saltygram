@@ -233,13 +233,13 @@ $('#menuButton').onclick=()=>{if($('#menuPanel').hidden){renderMenu();$('#menuPa
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#menuPanel,#menuButton'))closeMenu()});
 // 触摸设备：列表向下滚动几项后隐藏顶栏，上滚接近顶部时呼出
 if(matchMedia('(pointer: coarse)').matches){
- const topBar=document.querySelector('aside header');
+ const topBar=document.querySelector('aside');
  let lastY=0;
  const applyTopBar=()=>{
   const y=watchDocumentScroll()?(window.scrollY||0):($('#dialogs').scrollTop||0);
   const dy=y-lastY;
-  if(dy>0&&y>120)topBar.classList.add('hide');
-  else if(dy<0&&y<60)topBar.classList.remove('hide');
+  if(dy>0&&y>120)topBar.classList.add('header-hidden');
+  else if(dy<0&&y<60)topBar.classList.remove('header-hidden');
   lastY=y;
  };
  $('#dialogs').addEventListener('scroll',applyTopBar,{passive:true});
