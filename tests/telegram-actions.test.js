@@ -27,9 +27,10 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  }
  `;
  let source=await readFile(new URL('../public/telegram.js',import.meta.url),'utf8');source=source.replace("'telegram'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(mock).toString('base64')));
- for(const name of ['telegram/sessions/index.js','telegram/Password.js','big-integer','telegram/events/NewMessage.js','telegram/events/EditedMessage.js','telegram/events/Raw.js','telegram/network/index.js'])source=source.replace(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replace("'"+name+"'",JSON.stringify(import.meta.resolve(name)));
+ for(const name of ['telegram/sessions/index.js','telegram/Password.js','big-integer','telegram/events/NewMessage.js','telegram/events/EditedMessage.js','telegram/events/Raw.js','telegram/network/index.js','telegram/network/MTProtoSender.js'])source=source.replace(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replace("'"+name+"'",JSON.stringify(import.meta.resolve(name)));
  source=source.replace("'./cache.js'",JSON.stringify(new URL('../public/cache.js',import.meta.url).href));
  source=source.replace("'./media-download.js'",JSON.stringify(new URL('../public/media-download.js',import.meta.url).href));
+ source=source.replace("'./mtproto-compat.js'",JSON.stringify(new URL('../public/mtproto-compat.js',import.meta.url).href));
  const api=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
  const own=await api.getOwnProfile();assert.deepEqual(own,{id:'1',title:'Owner',username:'owner',about:'My bio',phone:'123',avatarKey:'8'});
  const dialogs=await api.getDialogs();assert.equal(dialogs[0].personal,true);assert.equal(dialogs[0].pinned,true);assert.equal(dialogs[0].pinOrder,0);assert.equal(dialogs[1].pinned,false);await api.getMessages('2',10,{offsetId:300,limit:50});const page=globalThis.adapterCalls.find(c=>c.method==='history');assert.equal(page.options.offsetId,300);assert.equal(page.options.replyTo,10);

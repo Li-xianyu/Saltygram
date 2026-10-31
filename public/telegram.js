@@ -5,11 +5,14 @@ import { Raw } from 'telegram/events/Raw.js';
 import { UpdateConnectionState } from 'telegram/network/index.js';
 import bigInt from 'big-integer';
 import { TelegramClient, Api, utils } from 'telegram';
+import { MTProtoSender } from 'telegram/network/MTProtoSender.js';
+import { installOrphanResultGuard } from './mtproto-compat.js';
 import { StringSession } from 'telegram/sessions/index.js';
 import { clearCache, removeCachePrefixes } from './cache.js';
 import { computeCheck } from 'telegram/Password.js';
 
 // Browser-only adapter. A future backend can implement this same interface.
+installOrphanResultGuard(MTProtoSender);
 // Accounts are stored as a list; the active account is tracked by owner id.
 const KEY = 'xy-telegram-accounts';
 const ACTIVE = 'xy-telegram-account-active';

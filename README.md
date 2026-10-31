@@ -86,3 +86,8 @@ GramJS 下载回调的字节数在适配层统一换算为 0～1 进度，界面
 ## Cloudflare Pages 部署
 
 连接 GitHub 仓库后，根目录保留仓库根目录（不要选 `public`）；构建命令为 `npm run build`，构建输出目录为 `dist`，构建环境设置 `NODE_VERSION=22`。生产分支选择实际推送的分支。无需部署 Node 服务，也无需把 Telegram API 凭据配置进 Cloudflare 构建环境；在网页连接账号时输入即可。`.env`、登录数据和浏览器缓存不随代码发布。
+
+
+## GramJS 迟到响应兼容
+
+固定兼容当前 GramJS 2.26.22 的 RPC 接收路径：对于已经没有 pending request 的重复或迟到响应，在解析前直接返回，避免依赖库主动构造 `TypeNotFoundError(0)` 时触发阻塞式浏览器 alert。补丁在创建主连接或媒体 DC 连接之前安装，不更改请求队列、传输解密、有效请求的解析、RPC 错误和 Promise 拒绝。测试使用实际依赖复现原始弹窗，并验证重复响应、迟到错误响应及有效文件响应、真实解析失败。升级 Telegram 依赖时需重新核对该兼容层。
