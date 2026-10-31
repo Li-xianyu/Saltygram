@@ -20,7 +20,7 @@ function loadAccounts(){ try { return JSON.parse(localStorage.getItem(KEY) || '[
 function persistAccounts(list){ localStorage.setItem(KEY, JSON.stringify(list)); }
 let memory = (()=>{ try{ const active=localStorage.getItem(ACTIVE); return loadAccounts().find(a=>a.owner===active) || {}; }catch{ return {}; } })();
 export function settings(){ return memory; }
-export function listAccounts(){ const current=memory.owner; return loadAccounts().map(a=>({owner:a.owner,title:a.title||('账号 '+String(a.apiId)),active:a.owner===current})); }
+export function listAccounts(){ const current=memory.owner; return loadAccounts().map(a=>({owner:a.owner,title:a.title||('账号 '+String(a.apiId)),avatarKey:a.avatarKey||'',active:a.owner===current})); }
 export async function configure(apiId, apiHash, remember) {
   if (!/^\d+$/.test(String(apiId)) || Number(apiId) <= 0 || !/^[a-f0-9]{32}$/i.test(apiHash)) throw Error('请填写有效的 API ID 和 32 位 API Hash');
   if (client) await client.disconnect();
@@ -39,6 +39,8 @@ async function identify(){
   const me=await client.getMe();
   memory.owner=me.id.toString();
   memory.title=displayName(me);
+  memory.avatarKey=me.photo?.photoId?.toString()||'';
+  entities.set(memory.owner, me);
   saveAccount();
 }
 function saveAccount(){

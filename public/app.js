@@ -186,7 +186,9 @@ function renderMenu(){
  const accounts=telegram.listAccounts();
  const current=accounts.find(a=>a.active);
  const me=document.createElement('div');me.className='menu-me';
- const av=document.createElement('div');av.className='avatar';av.textContent=(current?.title||'?').slice(0,1);
+ const av=document.createElement('div');av.className='avatar';
+ if(current?.avatarKey)avatar(av,{id:current.owner,title:current.title||'?',avatarKey:current.avatarKey});
+ else av.textContent=(current?.title||'?').slice(0,1);
  const name=document.createElement('strong');name.textContent=current?.title||'未登录';
  me.append(av,name);panel.append(me);
  const divider=()=>{const d=document.createElement('div');d.className='menu-divider';panel.append(d)};
