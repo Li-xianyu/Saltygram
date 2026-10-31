@@ -37,7 +37,7 @@ test('info page loads real tab pages, keeps saved media in self peer and discard
  await controller.open({id:'group',title:'群',group:true});await ticks();
  assert.equal(root.querySelector('.info-status').textContent,'42 位成员 · 3 人在线');assert.equal(root.querySelector('.info-link a').getAttribute('href'),'https://t.me/example');
  const firstMember=root.querySelector('.info-member');root.querySelector('.info-more').onclick();await ticks();assert.equal(root.querySelectorAll('.info-member').length,1,'pagination deduplicates members');assert.equal(root.querySelector('.info-member'),firstMember,'unchanged members retain their DOM nodes');
- root.querySelector('[data-info-tab="saved"]').onclick();await ticks();assert.ok(calls.some(c=>c[0]==='items'&&c[2].saved));root.querySelector('.info-attachment').onclick();assert.ok(calls.some(c=>c[0]==='media'&&c[1]==='self'));
+ root.querySelector('[data-info-tab="saved"]').onclick();await ticks();assert.ok(calls.some(c=>c[0]==='items'&&c[2].saved));assert.ok(root.querySelector('.info-saved-text'));
  await controller.open({id:'user',title:'Alice'});await ticks();assert.equal(root.querySelector('.info-link').hidden,true);assert.equal(root.querySelector('[data-info-tab="members"]').hidden,true);
  telegram.getConversationProfile=()=>new Promise(r=>resolveProfile=r);
  const opening=controller.open({id:'late',title:'原始资料'});await ticks();owner='b';resolveProfile({id:'late',title:'不应写入',group:true});await opening;

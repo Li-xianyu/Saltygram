@@ -156,10 +156,11 @@ function renderMessages(mode='preserve'){
  }
  if(m.webpage){const url=safeURL(m.webpage.url);if(url){const link=document.createElement('a');link.className='web-preview';link.href=url;link.target='_blank';link.rel='noopener noreferrer';const title=document.createElement('strong');title.textContent=m.webpage.title||new URL(url).hostname;const desc=document.createElement('span');desc.textContent=(m.webpage.description||'').slice(0,250);link.append(title,desc);bubble.append(link)}}
  if(m.buttons?.length)bubble.append(messageButtons(m,active));
- const actions=document.createElement('button');actions.className='message-menu-trigger';actions.textContent='···';actions.setAttribute('aria-label','消息操作');actions.onclick=e=>openMessageMenu(m,e.currentTarget);body.append(bubble,actions);row.oncontextmenu=e=>{if(e.target.closest('input,textarea,video,audio'))return;e.preventDefault();e.stopPropagation();openMessageMenu(m,row,e)};
+ body.append(bubble);row.oncontextmenu=e=>{if(e.target.closest('input,textarea,video,audio'))return;e.preventDefault();e.stopPropagation();openMessageMenu(m,row,e)};
  const meta=document.createElement('div');meta.className='message-time';meta.textContent=(m.edited?'已编辑 · ':'')+time(m.date);
  if(m.out){const status=document.createElement('span');status.className='delivery-status';const label=deliveryState(m,state);status.textContent=label==='已读'?' ✓✓':label==='已保存'?' · 已保存':' ✓';status.title=label;status.setAttribute('aria-label',label);meta.append(status)}
- row.append(body,meta);nodes.push(row);if(!m.out&&m.id>(state.inbox||0))readObserver.observe(row);
+ bubble.append(meta);
+ row.append(body);nodes.push(row);if(!m.out&&m.id>(state.inbox||0))readObserver.observe(row);
  }
  if(!nodes.length){const empty=previousNodes.get('empty')||document.createElement('div');empty.dataset.listKey='empty';empty.className='empty';if(empty.textContent!=='暂无消息')empty.textContent='暂无消息';nodes.push(empty)}reconcileChildren(root,nodes);
  for(const el of media.values())if(!el.isConnected){visibleResources.unobserve(el);el.querySelectorAll('video,audio').forEach(v=>v.pause());const anim=stickerAnimations.get(el);if(anim){anim.destroy();stickerAnimations.delete(el)}}
@@ -196,8 +197,10 @@ async function loadOlder(){
  catch(e){toast(e.errorMessage||e.message)}finally{p.busy=false;if(version===generation)updateHistoryControl()}
 }
 $('#loadOlder').onclick=loadOlder;
-$('.conversation').addEventListener('scroll',()=>{if(!watchDocumentScroll()&&messageScroller().scrollTop<80)loadOlder()},{passive:true});
-window.addEventListener('scroll',()=>{if(watchDocumentScroll()&&document.body.classList.contains('chat-open')&&active&&messageScroller().scrollTop<80)loadOlder()},{passive:true});
+function updateJumpBottom(){const pane=messageScroller();const far=pane.scrollHeight-pane.scrollTop-(pane.clientHeight||0);$('#jumpToBottom').hidden=!active||far<400}
+$('#jumpToBottom').onclick=()=>{const pane=messageScroller();pane.scrollTo?pane.scrollTo({top:pane.scrollHeight,behavior:'smooth'}):pane.scrollTop=pane.scrollHeight};
+$('.conversation').addEventListener('scroll',()=>{updateJumpBottom();if(!watchDocumentScroll()&&messageScroller().scrollTop<80)loadOlder()},{passive:true});
+window.addEventListener('scroll',()=>{updateJumpBottom();if(watchDocumentScroll()&&document.body.classList.contains('chat-open')&&active&&messageScroller().scrollTop<80)loadOlder()},{passive:true});
 $('#returnLatest').onclick=async()=>{const key=threadKey();paging().around=false;history[key]=[];await select(active,activeTopic)};
 async function jumpToMessage(chat,id){
  if(chat!==active){toast('该引用来自其他会话，暂不在当前窗口跳转');return}

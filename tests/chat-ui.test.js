@@ -117,7 +117,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   assert.ok(document.querySelector('[data-message-id="51"]'));assert.ok(document.querySelector('[data-message-id="150"]'));
   assert.equal(globalThis.uiCalls.at(-1).options.offsetId,101);
   // Message menu reply -> explicit reply ID on submit.
-  const openMenu=id=>{const button=document.querySelector('[data-message-id="'+id+'"] .message-menu-trigger');button.onclick({currentTarget:button})};
+  const openMenu=id=>{const row=document.querySelector('[data-message-id="'+id+'"]');row.oncontextmenu({target:row,preventDefault(){},stopPropagation(){},clientX:990,clientY:790})};
   const menuAction=text=>[...document.querySelectorAll('#messageMenu button')].find(b=>b.textContent===text).onclick();
   openMenu(101);menuAction('回复');document.querySelector('#message').value='回复测试';await document.querySelector('#composer').onsubmit({preventDefault(){}});
   assert.equal(globalThis.uiActions.find(a=>a.type==='send').replyTo,101);assert.equal(globalThis.uiActions.find(a=>a.type==='send').topic,42);
