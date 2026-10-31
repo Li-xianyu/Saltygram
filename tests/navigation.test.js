@@ -37,3 +37,26 @@ test('without the History API the stack is inert and callbacks still run',()=>{
  nav.push();nav.goBack();assert.equal(backs,1);
  pop({chat:false});assert.equal(backs,1,'no popstate listener should be installed');
 });
+
+test('contacts adds one layer, then a conversation returns to contacts before the list',()=>{
+ const {win,stack,backCalls,pop}=fixture();let view='list';
+ const nav=installNavigation({win,onBackToList:()=>view='list',onContacts:()=>view='contacts',onReopen:()=>view='chat'});
+ nav.push('contacts');nav.push('contacts');assert.deepEqual(stack,[{view:'contacts'}]);
+ nav.push();assert.deepEqual(stack[1],{chat:true,from:'contacts'});
+ nav.goBack();assert.equal(view,'contacts');assert.equal(backCalls(),1);
+ pop({view:'contacts'});nav.goBack();assert.equal(view,'list');assert.equal(backCalls(),2);
+ pop(null);nav.goBack();assert.equal(backCalls(),2,'root must not pop another entry');
+ pop({view:'contacts'});assert.equal(view,'contacts');pop({chat:true,from:'contacts'});assert.equal(view,'chat');
+ nav.goBack();assert.equal(view,'contacts');
+});
+test('contacts back works without a browser History API',()=>{
+ const {win}=fixture(false);let view='list';const nav=installNavigation({win,onBackToList:()=>view='list',onContacts:()=>view='contacts'});
+ nav.push('contacts');nav.push();nav.goBack();assert.equal(view,'contacts');nav.goBack();assert.equal(view,'list');
+});
+
+test('my page participates in back and forward history including saved messages',()=>{
+ const {win,stack,pop}=fixture();let view='list';
+ const nav=installNavigation({win,onBackToList:()=>view='list',onMe:()=>view='me',onReopen:()=>view='chat'});
+ nav.push('me');nav.push('me');assert.deepEqual(stack,[{view:'me'}]);nav.push();assert.deepEqual(stack[1],{chat:true,from:'me'});
+ nav.goBack();assert.equal(view,'me');nav.goBack();assert.equal(view,'list');pop({view:'me'});assert.equal(view,'me');pop({chat:true,from:'me'});assert.equal(view,'chat');
+});

@@ -13,7 +13,7 @@ export function roundRowOpacity(y){
  const distance=Math.min(1,Math.abs(y-.5)*2);
  return 1-distance*distance;
 }
-export function installRoundList(root,{win=window,doc=document}={}){
+export function installRoundList(root,{win=window,doc=document,isVisible=()=>true}={}){
  // CSS owns this path completely: no scroll handler, RAF or geometry observer.
  // Keep the CSS keyframes independent: they are the existing native effect.
  if(win.CSS?.supports?.('animation-timeline','view()')){
@@ -24,7 +24,7 @@ export function installRoundList(root,{win=window,doc=document}={}){
  let items=[],start=0,end=0;
  const reset=item=>{if(item.transform!==null){item.row.style.removeProperty('transform');item.transform=null}if(item.opacity!==null){item.row.style.removeProperty('opacity');item.opacity=null}};
  const lowerBound=value=>{let lo=0,hi=items.length;while(lo<hi){const mid=(lo+hi)>>>1;if(items[mid].center<value)lo=mid+1;else hi=mid}return lo};
- const visible=()=>win.innerWidth<=480&&win.innerHeight<=540&&!doc.hidden&&!doc.body?.classList?.contains('chat-open')&&!doc.body?.classList?.contains('home-open');
+ const visible=()=>isVisible()&&win.innerWidth<=480&&win.innerHeight<=540&&!doc.hidden&&!doc.body?.classList?.contains('chat-open')&&!doc.body?.classList?.contains('home-open');
  const draw=()=>{
   queued=false;if(disposed||!active)return;
   const height=win.innerHeight,scroll=win.scrollY||0;

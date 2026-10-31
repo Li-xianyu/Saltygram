@@ -1,3 +1,5 @@
+import { formatDownloadPercent } from './media-download.js';
+import { createCachedResource } from './cached-resource.js';
 import { installRoundList } from './round-list.js';
 import { installWatchHaptics } from './watch-haptics.js';
 import { createDialogList, reconcileChildren, orderDialogs } from './dialog-list.js';
@@ -10,6 +12,7 @@ import QRCode from 'qrcode';
 import { createResourceLoader, avatarThumbnail } from './resources.js';
 import { installNavigation } from './navigation.js';
 const resources=createResourceLoader(4);
+const mediaDownloads=createResourceLoader(2);
 const avatarResources=createResourceLoader(4);
 const objectURLs=new Set();
 function scopeKey(key){const scope=telegram.cacheScope();return scope?scope+':'+key:null}
@@ -48,7 +51,9 @@ function avatar(el,d){
  visibleResources.observe(el);
 }
 function time(date){return new Date(date*1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}
-const roundDialogList=installRoundList($('#dialogs'));
+const roundDialogList=installRoundList($('#dialogs'),{isVisible:()=>!document.body.classList.contains('nav-contacts')&&!document.body.classList.contains('nav-me')});
+const roundContactList=installRoundList($('#contactsView'),{isVisible:()=>document.body.classList.contains('nav-contacts')});
+const updateContactList=createDialogList($('#contactsView'),{select:selectContact,avatar,formatTime:time,sort:list=>list,emptyText:'暂无联系人',observeAvatar:el=>visibleResources.observe(el),releaseAvatar:el=>visibleResources.unobserve(el)});
 const updateDialogList=createDialogList($('#dialogs'),{select,contextMenu:(id,event,row)=>openConversationMenu(id,event,row),avatar,formatTime:time,observeAvatar:el=>visibleResources.observe(el),releaseAvatar:el=>visibleResources.unobserve(el)});
 function renderDialogs(){
  dialogs=orderDialogs(dialogs);
@@ -58,7 +63,12 @@ function renderDialogs(){
 }
 function watchDocumentScroll(){return window.innerWidth<=480&&window.innerHeight<=540}
 function messageScroller(){return watchDocumentScroll()?(document.scrollingElement||document.documentElement):$('.conversation')}
-const nav=installNavigation({onBackToList:()=>{document.body.classList.remove('chat-open');if(watchDocumentScroll())messageScroller().scrollTop=0},onReopen:()=>{if(!active)return;document.body.classList.remove('home-open');document.body.classList.add('chat-open','has-chat')}});
+const nav=installNavigation({
+ onBackToList:()=>{document.body.classList.remove('chat-open');switchNav('chat',{record:false});if(watchDocumentScroll())messageScroller().scrollTop=0},
+ onContacts:()=>{document.body.classList.remove('chat-open');switchNav('contacts',{record:false});if(watchDocumentScroll())messageScroller().scrollTop=0},
+ onMe:()=>{document.body.classList.remove('chat-open');switchNav('me',{record:false});if(watchDocumentScroll())messageScroller().scrollTop=0},
+ onReopen:({from}={})=>{if(!active)return;switchNav(['contacts','me'].includes(from)?from:'chat',{record:false});document.body.classList.remove('home-open');document.body.classList.add('chat-open','has-chat')}
+});
 function renderMessages(mode='preserve'){
  const root=$('#messages'),pane=messageScroller();const oldHeight=pane.scrollHeight||0,oldTop=pane.scrollTop||0,nearBottom=oldHeight-oldTop-(pane.clientHeight||0)<120;
  const media=new Map([...root.querySelectorAll('[data-media-key]')].map(el=>[el.dataset.mediaKey,el]));
@@ -171,50 +181,82 @@ $('#cancelQrLogin').onclick=async()=>{qrLoginActive=false;resetQrLoginUI();await
 const NAV_SVG={
  chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-8 8H5l-2 2V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8Z"/></svg>',
  contacts:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
- me:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></svg>',
+ me:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M5.5 17c.5-3 6.5-3 7 0M15 9h3M15 13h3"/></svg>',
  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
  logout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
  cache:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>'
 };
 function setStatus(state){const dot=$('#statusDot');dot.classList.toggle('online',state==='online');dot.classList.toggle('connecting',state==='connecting')}
-function closeMenu(){$('#menuPanel').hidden=true;$('#menuButton').setAttribute('aria-expanded','false')}
-let contacts=[],contactsLoaded=false;
+let logoutArmed=null,logoutPending=false;
+function resetLogoutConfirmation(){
+ if(!logoutArmed)return;const button=logoutArmed;logoutArmed=null;
+ button.classList.remove('logout-confirm');button.setAttribute('aria-pressed','false');button.innerHTML=NAV_SVG.logout+'退出当前账号';
+}
+function closeMenu(){resetLogoutConfirmation();$('#menuPanel').hidden=true;$('#menuButton').setAttribute('aria-expanded','false')}
+let contacts=[];
+const accountScope=()=>telegram.cacheScope()||telegram.settings().owner||'volatile';
+const contactsResource=createCachedResource({scope:accountScope,key:()=>scopeKey('snapshot:contacts'),read:cacheGet,write:cachePut,fetch:()=>telegram.getContacts(),generation:cacheGeneration,onChange:value=>{contacts=value;if(document.body.classList.contains('nav-contacts'))renderContacts()}});
+const profileResource=createCachedResource({scope:accountScope,key:()=>scopeKey('snapshot:ownProfile'),read:cacheGet,write:cachePut,fetch:()=>telegram.getOwnProfile(),generation:cacheGeneration,onChange:()=>{if(document.body.classList.contains('nav-me'))renderMe()}});
+function loadProfile(){return profileResource.load({revalidate:connected}).catch(()=>{if(document.body.classList.contains('nav-me'))renderMe()})}
+function refreshAccountViews(){
+ if(document.body.classList.contains('nav-me'))renderMe();
+ return Promise.allSettled([loadContacts(),loadProfile()]);
+}
+function selectContact(id){
+ const c=contacts.find(c=>c.id===id);if(!c)return;
+ if(!dialogs.some(d=>d.id===id)){dialogs.unshift({id,title:c.title,unread:0,text:'',date:0,avatarKey:c.avatarKey,personal:true,user:true,group:false,channel:false});renderDialogs()}
+ return select(id);
+}
 function renderContacts(){
- const root=$('#contactsView');
- const query=($('#search').value||'').trim().toLowerCase();
- root.replaceChildren();
- const list=contacts.filter(c=>!query||c.title.toLowerCase().includes(query));
- for(const c of list){
-  const row=document.createElement('button');row.className='dialog-row';row.type='button';
-  row.onclick=()=>{if(!dialogs.some(d=>d.id===c.id)){dialogs.unshift({id:c.id,title:c.title,unread:0,text:'',date:0,avatarKey:c.avatarKey,personal:true,user:true,group:false,channel:false});renderDialogs()}select(c.id)};
-  const av=document.createElement('div');av.className='avatar';
-  if(c.avatarKey)avatar(av,{id:c.id,title:c.title,avatarKey:c.avatarKey});
-  else av.textContent=(c.title||'?').slice(0,1);
-  const copy=document.createElement('div');copy.className='dialog-copy';
-  const top=document.createElement('div');top.className='row-top';
-  const title=document.createElement('strong');title.textContent=c.title;
-  top.append(title);
-  const preview=document.createElement('div');preview.className='preview';
-  const p=document.createElement('p');p.textContent=c.phone||'';
-  preview.append(p);
-  copy.append(top,preview);
-  row.append(av,copy);
-  root.append(row);
- }
- if(!list.length)root.innerHTML='<div class="empty">'+(query?'没有匹配的联系人':'暂无联系人')+'</div>';
+ updateContactList(contacts.map(c=>({...c,text:c.phone||''})),{active,query:($('#search').value||'').trim(),connected:true});
+ roundContactList.refresh();
 }
 async function loadContacts(){
- try{contacts=await telegram.getContacts()}catch(e){contacts=[]}
- contactsLoaded=true;
- renderContacts();
+ try{await contactsResource.load({revalidate:connected})}catch{if(document.body.classList.contains('nav-contacts')){if(contactsResource.value===undefined)$('#contactsView').textContent='联系人加载失败，请重新进入重试';else toast('联系人同步失败，保留本地列表')}}
 }
-function switchNav(key){
+function switchNav(key,{record=true}={}){
+ if(record&&window.innerWidth<=700){
+  if(key==='contacts'||key==='me')nav.push(key);
+  else if(key==='chat'&&(document.body.classList.contains('nav-contacts')||document.body.classList.contains('nav-me'))){nav.goBack();return}
+ }
+ $('aside').classList.remove('header-hidden');
  document.body.classList.toggle('nav-contacts',key==='contacts');
  document.body.classList.toggle('nav-me',key==='me');
- if(key==='contacts'&&!contactsLoaded)loadContacts();
- if(key==='me'&&!$('#meView').children.length)$('#meView').innerHTML='<div class="empty">「我的」功能开发中</div>';
+ roundDialogList.refresh();roundContactList.refresh();
+ if(key==='contacts'){contacts=contactsResource.value||[];renderContacts();loadContacts()}
+ if(key==='me'){renderMe();loadProfile()}
 }
+function renderMe(){
+ const root=$('#meView');root.replaceChildren();
+ const saved=telegram.settings(),profile=profileResource.value||{id:saved.owner,title:saved.title||'我的',avatarKey:saved.avatarKey||''};
+ const hero=document.createElement('section');hero.className='profile-hero';
+ const av=document.createElement('div');av.className='avatar profile-avatar';
+ if(profile.id)avatar(av,profile);else av.textContent='我';
+ const heading=document.createElement('h2');heading.textContent=profile.title;
+ const status=document.createElement('p');status.className='profile-status';status.textContent=connected?'已连接 Telegram':restoring?'正在连接 Telegram…':profile.id?'离线资料':'尚未连接';
+ hero.append(av,heading,status);root.append(hero);
+ const details=document.createElement('dl');details.className='profile-details';
+ for(const [label,value]of [['用户名',profile.username?'@'+profile.username:''],['个人简介',profile.about||''],['手机号',profile.phone?'+'+profile.phone.replace(/^\+/, ''):''],['账号 ID',profile.id]]){
+  if(!value)continue;const row=document.createElement('div'),term=document.createElement('dt'),description=document.createElement('dd');term.textContent=label;description.textContent=value;row.append(term,description);details.append(row);
+ }
+ root.append(details);
+ const actions=document.createElement('div');actions.className='profile-actions';
+ const add=(label,icon,action)=>{const button=document.createElement('button');button.type='button';button.className='profile-action';const mark=document.createElement('span');mark.className='profile-action-icon';mark.innerHTML=icon;const text=document.createElement('span');text.textContent=label;const arrow=document.createElement('span');arrow.className='profile-chevron';arrow.textContent='›';button.append(mark,text,arrow);button.onclick=action;actions.append(button);return button};
+ if(connected&&profile.id)add('收藏夹','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4h12v17l-6-4-6 4Z"/></svg>',()=>{
+  if(!dialogs.some(d=>d.id===profile.id)){dialogs.unshift({id:profile.id,title:'收藏夹',avatarKey:profile.avatarKey,unread:0,text:'',readState:{saved:true}});renderDialogs()}
+  return select(profile.id);
+ });
+ add(document.body.classList.contains('dark')?'切换浅色主题':'切换深色主题',$('#theme').innerHTML,()=>{$('#theme').click();renderMe()});
+ add('本地缓存',NAV_SVG.cache,()=>{$('#storageDialog').showModal();showStorage()});
+ add(connected?'账号管理':'连接账号',NAV_SVG.me,()=>{if(connected){renderMenu();$('#menuPanel').hidden=false;$('#menuButton').setAttribute('aria-expanded','true')}else openLogin()});
+ root.append(actions);
+ if(profileResource.error){
+  const retry=document.createElement('button');retry.className='profile-status';retry.textContent='资料同步失败，点击重试';retry.onclick=loadProfile;root.append(retry);
+ }else if(connected&&!profileResource.value){const hint=document.createElement('p');hint.className='profile-status';hint.textContent='正在同步资料…';root.append(hint)}
+}
+
 function renderMenu(){
+ resetLogoutConfirmation();
  const panel=$('#menuPanel');panel.replaceChildren();
  const accounts=telegram.listAccounts();
  const current=accounts.find(a=>a.active);
@@ -242,9 +284,17 @@ function renderMenu(){
  add.onclick=()=>{closeMenu();openLogin()};
  panel.append(add);
  if(connected){
-  const logout=document.createElement('button');logout.className='menu-item';logout.type='button';
+  const logout=document.createElement('button');logout.className='menu-item menu-logout';logout.type='button';logout.dataset.menuLogout='';logout.setAttribute('aria-pressed','false');logout.disabled=logoutPending;
   logout.innerHTML=NAV_SVG.logout+'退出当前账号';
-  logout.onclick=async()=>{closeMenu();try{await api('/logout',{});location.reload()}catch(e){toast(e.message)}};
+  logout.onclick=async()=>{
+   if(logoutPending)return;
+   if(logoutArmed!==logout){
+    resetLogoutConfirmation();logoutArmed=logout;logout.classList.add('logout-confirm');logout.setAttribute('aria-pressed','true');
+    logout.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>确认退出';return;
+   }
+   logoutPending=true;logout.disabled=true;closeMenu();
+   try{await api('/logout',{});location.reload()}catch(e){toast(e.message)}finally{logoutPending=false;logout.disabled=false}
+  };
   panel.append(logout);
  }
  divider();
@@ -260,24 +310,26 @@ function renderMenu(){
  panel.append(cache);
 }
 $('#menuButton').onclick=()=>{if($('#menuPanel').hidden){renderMenu();$('#menuPanel').hidden=false;$('#menuButton').setAttribute('aria-expanded','true')}else closeMenu()};
-document.addEventListener('pointerdown',e=>{if(!e.target.closest('#menuPanel,#menuButton'))closeMenu()});
-// 触摸设备：列表向下滚动几项后隐藏顶栏，上滚接近顶部时呼出
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('[data-menu-logout]'))resetLogoutConfirmation();if(!e.target.closest('#menuPanel,#menuButton'))closeMenu()});
+document.addEventListener('click',e=>{if(!e.target.closest('[data-menu-logout]'))resetLogoutConfirmation()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeMenu()});
+// Touch list headers collapse until the active list reaches its top edge.
 if(matchMedia('(pointer: coarse)').matches){
- const topBar=document.querySelector('aside');
- let lastY=0;
+ const sidebar=$('aside');
  const applyTopBar=()=>{
-  const y=watchDocumentScroll()?(window.scrollY||0):($('#dialogs').scrollTop||0);
-  const dy=y-lastY;
-  if(dy>0&&y>120)topBar.classList.add('header-hidden');
-  else if(dy<0&&y<60)topBar.classList.remove('header-hidden');
-  lastY=y;
+  if(document.body.classList.contains('chat-open'))return;
+  const pane=document.body.classList.contains('nav-contacts')?$('#contactsView'):document.body.classList.contains('nav-me')?$('#meView'):$('#dialogs');
+  const y=watchDocumentScroll()?(window.scrollY||0):(pane.scrollTop||0);
+  if(y>120)sidebar.classList.add('header-hidden');
+  else if(y<=2)sidebar.classList.remove('header-hidden');
  };
- $('#dialogs').addEventListener('scroll',applyTopBar,{passive:true});
+ for(const pane of [$('#dialogs'),$('#contactsView'),$('#meView')])pane.addEventListener('scroll',applyTopBar,{passive:true});
  window.addEventListener('scroll',applyTopBar,{passive:true});
-}$('#closeLogin').onclick=()=>$('#login').close();
+}
+$('#closeLogin').onclick=()=>$('#login').close();
 $('#authForm').onsubmit=async e=>{e.preventDefault();const b=$('#authSubmit');b.disabled=true;$('#authError').textContent='';try{const value=$('#authInput').value.trim();if(phase==='phone'){await telegram.configure($('#apiId').value.trim(),$('#apiHash').value.trim(),$('#remember').checked);const data=await api('/auth/code',{phone:value.replace(/\s/g,'')});phase='code';$('#credentials').hidden=true;$('#authLabel').textContent='登录验证码';$('#authHint').textContent=data.viaApp?'请查看 Telegram 官方会话中的验证码。':'请查看 Telegram 或短信中的验证码。';$('#authInput').value='';$('#authInput').type='text';$('#authInput').placeholder='输入验证码';b.textContent='登录'}else{const result=await api('/auth/login',phase==='password'?{password:$('#authInput').value}:{code:value});if(result.passwordRequired){phase='password';$('#authLabel').textContent='两步验证密码';$('#authHint').textContent='你的账号开启了两步验证，请输入密码。';$('#authInput').value='';$('#authInput').type='password';$('#authInput').placeholder='输入两步验证密码'}else{await loadReal();$('#login').close()}}}catch(e){$('#authError').textContent=e.message}finally{b.disabled=false}};
 async function loadReal(){
- const cached=await snapshotGet('dialogs');connected=true;document.body.classList.add('connected');setStatus('online');
+ const cached=await snapshotGet('dialogs');connected=true;document.body.classList.add('connected');setStatus('online');void refreshAccountViews();
  if(!active){updateStartPage();$('#emptyState').hidden=false}
  if(cached&&!dialogs.length){dialogs=cached;renderDialogs()}
  try{const data=await api('/dialogs');dialogs=mergeDialogSnapshot(data);snapshotPut('dialogs',dialogs);renderDialogs()}catch(e){if(!cached)throw e;toast('当前显示本地会话，网络同步失败')}
@@ -309,7 +361,7 @@ function mediaCard(m,chat){
  }
  if(mediaCache.has(key)){show(mediaCache.get(key));return card}
  action.onclick=async()=>{action.disabled=true;progress.textContent='正在下载…';
- try{if(info.size>100*1024*1024)throw Error('单个文件暂不支持超过 100 MB');const blob=await cachedBlob('media:'+chat+':'+(m.media.key||m.id),()=>telegram.downloadMedia(chat,m.id,(n)=>{progress.textContent='下载中 '+Math.round(Number(n)*100)+'%'}));const url=URL.createObjectURL(blob);mediaCache.set(key,url);progress.textContent='已加载 · '+bytes(blob.size);show(url);}
+ try{if(info.size>100*1024*1024)throw Error('单个文件暂不支持超过 100 MB');const blob=await cachedBlob('media:'+chat+':'+(m.media.key||m.id),()=>telegram.downloadMedia(chat,m.id,(n)=>{progress.textContent='下载中 '+formatDownloadPercent(n)}));const url=URL.createObjectURL(blob);mediaCache.set(key,url);progress.textContent='已加载 · '+bytes(blob.size);show(url);}
  catch(e){progress.textContent=e.errorMessage||e.message;action.disabled=false;action.textContent='重试'}
  };return card;
 }
@@ -324,10 +376,10 @@ function videoCard(m,chat){
  card.loadResource=async()=>{try{posterURL=await resources.load('video-thumb:'+key,async()=>{const blob=await cachedBlob('video-thumb:'+key,()=>telegram.downloadMedia(chat,m.id,undefined,true));return blob?resourceURL(blob):null});if(posterURL&&card.isConnected)poster.src=posterURL}catch{ /* No thumbnail: keep the neutral frame and play control. */ }};
  poster.onerror=()=>poster.removeAttribute('src');visibleResources.observe(card);
  play.onclick=async()=>{
- if(busy)return;busy=true;play.disabled=true;card.classList.add('video-loading');status.textContent='0%';
+ if(busy)return;busy=true;play.disabled=true;card.classList.add('video-loading');status.textContent='等待下载…';
  try{
  if(info.size>100*1024*1024)throw Error('视频超过 100 MiB，暂不支持播放');
- const url=await resources.load('video:'+key,async()=>resourceURL(await cachedBlob('media:'+key,()=>telegram.downloadMedia(chat,m.id,n=>status.textContent=Math.round(Number(n)*100)+'%'))));
+ const url=await mediaDownloads.load('video:'+key,async()=>resourceURL(await cachedBlob('media:'+key,()=>telegram.downloadMedia(chat,m.id,n=>status.textContent=formatDownloadPercent(n)))));
  if(!card.isConnected)return;
  const video=document.createElement('video');video.className='inline-video';video.controls=true;video.playsInline=true;video.preload='auto';if(posterURL)video.poster=posterURL;
  video.src=url;video.onwaiting=()=>{status.textContent='缓冲中'};video.onplaying=()=>{status.textContent=''};
@@ -356,7 +408,7 @@ function imageCard(m,chat){
  card.onclick=async()=>{
  if(card.classList.contains('image-failed'))return load();if(!img.src)return;
  const image=document.createElement('img');image.src=img.src;image.alt='图片';$('#viewerContent').replaceChildren(image);$('#mediaViewer').showModal();
- try{const full=await resources.load('full:'+chat+':'+m.id,async()=>resourceURL(await cachedBlob('full:'+chat+':'+(m.media.key||m.id),()=>telegram.downloadMedia(chat,m.id))));if(image.isConnected)image.src=full}catch{toast('原图加载失败，当前显示缩略图')}
+ try{const full=await mediaDownloads.load('full:'+chat+':'+m.id,async()=>resourceURL(await cachedBlob('full:'+chat+':'+(m.media.key||m.id),()=>telegram.downloadMedia(chat,m.id))));if(image.isConnected)image.src=full}catch{toast('原图加载失败，当前显示缩略图')}
  };
  card.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();card.click()}};
  return card;
@@ -372,9 +424,9 @@ function updateStartPage(){const available=connected||dialogs.length>0;document.
 $('#emptyConnect').onclick=openLogin;
 renderDialogs();
 async function bootstrap(){
- restoring=!!telegram.settings().session;updateStartPage();
+ restoring=!!telegram.settings().session;updateStartPage();void refreshAccountViews();
  const cached=await snapshotGet('dialogs');if(cached){dialogs=cached;renderDialogs();setStatus('connecting');updateStartPage()}
- try{if(await telegram.restore())await loadReal();else if(cached){dialogs=[];history={};active='';document.body.classList.remove('has-chat','chat-open');renderDialogs();setStatus('offline')}}catch(e){setStatus('offline');toast('网络同步失败：'+(e.errorMessage||e.message))}finally{restoring=false;updateStartPage()}
+ try{if(await telegram.restore())await loadReal();else if(cached){dialogs=[];history={};active='';document.body.classList.remove('has-chat','chat-open');renderDialogs();setStatus('offline')}}catch(e){setStatus('offline');toast('网络同步失败：'+(e.errorMessage||e.message))}finally{restoring=false;updateStartPage();if(document.body.classList.contains('nav-me'))renderMe()}
 }
 queueMicrotask(bootstrap);
 
@@ -468,7 +520,7 @@ async function flushRead(key){
  const maxId=readCandidate;readCandidate=0;if(!maxId||maxId<=(currentRead().inbox||0))return;const id=active,topic=activeTopic;
  try{const state=await telegram.markRead(id,maxId,topic);readStates.set(key,state);const d=dialogs.find(d=>d.id===id);if(d){const overall=topic?await telegram.getReadState(id,0):state;d.unread=overall.unread;d.readState=overall;renderDialogs()}snapshotPut('dialogs',dialogs)}catch{}
 }
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&active)renderMessages()});window.addEventListener('focus',()=>{if(active)renderMessages()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(active)renderMessages();if(document.body.classList.contains('nav-contacts'))void loadContacts();if(document.body.classList.contains('nav-me'))void loadProfile()}});window.addEventListener('focus',()=>{if(active)renderMessages()});
 
 $('#stickerPack').addEventListener('close',()=>{packGeneration++;clearStickerGrid()});
 $('#mediaLibrary').addEventListener('close',()=>{$('#mediaList').querySelectorAll('video,audio').forEach(el=>el.pause());$('#mediaList').querySelectorAll('.auto-image,.sticker,.video-card').forEach(el=>visibleResources.unobserve(el));$('#mediaList').replaceChildren()});
@@ -481,7 +533,7 @@ function mergeDialogSnapshot(data){
  const merged=data.map(d=>{const old=previous.get(d.id);if(!old)return d;if((old.lastMessageId||0)>(d.lastMessageId||0)){d={...d,text:old.text,date:old.date,time:old.time,lastMessageId:old.lastMessageId,unread:Math.max(old.unread||0,d.unread||0)}}if((old.readState?.inbox||0)>(d.readState?.inbox||0)){d.readState=old.readState;d.unread=old.unread}return d});
  const ids=new Set(merged.map(d=>d.id));for(const d of dialogs)if(!ids.has(d.id)&&seenLive.has(d.id+':'+d.lastMessageId))merged.unshift(d);return merged;
 }
-async function performRecovery(){if(!connected||polling)return;polling=true;try{const data=await telegram.getDialogs();dialogs=mergeDialogSnapshot(data);snapshotPut('dialogs',dialogs);renderDialogs();if(active&&!document.hidden)await refreshThread()}catch{}finally{polling=false}}
+async function performRecovery(){if(!connected||polling)return;if(document.body.classList.contains('nav-contacts'))void loadContacts();if(document.body.classList.contains('nav-me'))void loadProfile();polling=true;try{const data=await telegram.getDialogs();dialogs=mergeDialogSnapshot(data);snapshotPut('dialogs',dialogs);renderDialogs();if(active&&!document.hidden)await refreshThread()}catch{}finally{polling=false}}
 function requestRecovery(delay=150){clearTimeout(dialogSyncTimer);dialogSyncTimer=setTimeout(performRecovery,delay)}
 
 function receiveUpdate(event){
@@ -541,7 +593,7 @@ document.addEventListener('pointerdown',e=>{if(!e.target.closest('#conversationM
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeConversationMenu();const menu=!$('#conversationMenu').hidden?$('#conversationMenu'):!$('#messageMenu').hidden?$('#messageMenu'):null;if(menu&&['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();const buttons=[...menu.querySelectorAll('button:not(:disabled)')],index=buttons.indexOf(document.activeElement),next=e.key==='Home'?0:e.key==='End'?buttons.length-1:(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length;buttons[next]?.focus()}});
 function openContact(info){contactTarget=info;$('#contactTitle').textContent=info.contact?'编辑联系人':'添加联系人';$('#contactFirstName').value=info.firstName||info.title||'';$('#contactLastName').value=info.lastName||'';$('#contactError').textContent='';$('#contactDialog').showModal()}
 $('#closeContact').onclick=()=>$('#contactDialog').close();
-$('#contactForm').onsubmit=async e=>{e.preventDefault();if(!contactTarget)return;const target=contactTarget,b=$('#saveContact');b.disabled=true;$('#contactError').textContent='';try{const info=await telegram.addContact(target.id,$('#contactFirstName').value,$('#contactLastName').value);const d=dialogs.find(d=>d.id===target.id);if(d){d.title=info.title;d.contact=true}if(active===target.id)$('#chatTitle').textContent=info.title;snapshotPut('dialogs',dialogs);renderDialogs();$('#contactDialog').close();toast('联系人已保存')}catch(e){$('#contactError').textContent=e.errorMessage||e.message}finally{b.disabled=false}};
+$('#contactForm').onsubmit=async e=>{e.preventDefault();if(!contactTarget)return;const target=contactTarget,b=$('#saveContact');b.disabled=true;$('#contactError').textContent='';try{const info=await telegram.addContact(target.id,$('#contactFirstName').value,$('#contactLastName').value);const d=dialogs.find(d=>d.id===target.id);if(d){d.title=info.title;d.contact=true}if(active===target.id)$('#chatTitle').textContent=info.title;snapshotPut('dialogs',dialogs);renderDialogs();$('#contactDialog').close();void loadContacts();toast('联系人已保存')}catch(e){$('#contactError').textContent=e.errorMessage||e.message}finally{b.disabled=false}};
 async function markUnreadConversation(info){try{await telegram.markConversationUnread(info.id);const d=dialogs.find(d=>d.id===info.id);if(d)d.unreadMark=true;if(active===info.id)exitConversation();snapshotPut('dialogs',dialogs);renderDialogs();toast('已标记未读')}catch(e){toast(e.errorMessage||e.message)}}
 function exitConversation(){
  generation++;readCandidate=0;clearTimeout(readTimer);readObserver.disconnect();$('#messages').querySelectorAll('video,audio').forEach(el=>el.pause());$('#messages').querySelectorAll('[data-media-key]').forEach(el=>visibleResources.unobserve(el));for(const [el,anim]of stickerAnimations)if(el.closest('#messages')){anim.destroy();stickerAnimations.delete(el)}

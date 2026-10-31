@@ -12,7 +12,8 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  for(const dialog of document.querySelectorAll('dialog')){dialog.showModal=()=>dialog.open=true;dialog.close=()=>dialog.open=false}
  const originalInterval=globalThis.setInterval;globalThis.testIntervals=[];globalThis.setInterval=(fn,delay)=>{globalThis.testIntervals.push(delay);return 0};globalThis.uiCalls=[];globalThis.uiMediaCalls=[];globalThis.uiActions=[];
  const adapter=`
- export const subscribeUpdates=listener=>{globalThis.receiveLive=listener;return()=>{}};export const cacheScope=()=> 'test-account';export const settings=()=>({session:'test-session'});export const restore=async()=>true;
+ export const subscribeUpdates=listener=>{globalThis.receiveLive=listener;return()=>{}};export const cacheScope=()=> 'test-account';export const settings=()=>({session:'test-session'});export const restore=()=>new Promise(resolve=>globalThis.finishRestore=resolve);
+ export const getOwnProfile=async()=>({id:'1',title:'Test Owner',username:'test_owner',about:'Test bio',phone:'123123',avatarKey:'owner-photo'});export const logout=async()=>{globalThis.uiActions.push({type:'logout'});throw Error('模拟退出失败')};export const listAccounts=()=>[];export const getContacts=async()=>[{id:'-2000',title:'Contact Alice',phone:'123456',avatarKey:'contact-photo'},{id:'-3000',title:'Contact Bob',phone:'654321'}];
  export const getDialogs=async()=>[{id:'-1001',title:'测试群',pinned:true,pinOrder:0,forum:true,group:true,avatarKey:'p1'},{id:'-2000',title:'另一个聊天',unread:0}];
  export const getConversationInfo=async(id)=>{const user=id==='-2000',saved=globalThis.uiActions.find(a=>a.type==='contact'&&a.id===id);return {id,title:saved?saved.first+' '+saved.last:user?'另一个聊天':'测试群',firstName:saved?.first||'Alice',lastName:saved?.last||'',user,contact:!!saved,group:!user,forum:!user,canAddContact:user,canClear:true,canDelete:user,canLeave:!user}};
  export const addContact=async(id,first,last)=>{globalThis.uiActions.push({type:'contact',id,first,last});return {id,title:first+' '+last,contact:true}};
@@ -44,11 +45,20 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  `;
  let app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
  app=app.replace("'./telegram.js'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(adapter).toString('base64')));
- for(const file of ['cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
+ for(const file of ['cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
  app=app.replace("'pako'",JSON.stringify(import.meta.resolve('pako')));
  app=app.replace("'qrcode'",JSON.stringify(import.meta.resolve('qrcode')));
  try{
   await import('data:text/javascript;base64,'+Buffer.from(app).toString('base64'));
+  for(let i=0;i<100&&!globalThis.finishRestore;i++)await new Promise(r=>setImmediate(r));
+  document.querySelector('#menuButton').onclick();[...document.querySelectorAll('#menuPanel .menu-item')].find(b=>b.textContent==='我的').onclick();
+  assert.ok(document.querySelector('#meView').textContent.includes('正在连接 Telegram'));
+  globalThis.finishRestore(true);
+  for(let i=0;i<200&&!document.querySelector('#meView').textContent.includes('@test_owner');i++)await new Promise(r=>setImmediate(r));
+  assert.ok(document.querySelector('#meView').textContent.includes('已连接 Telegram'),'desktop view refreshes when restore completes without another click');
+  const profileLabels=[...document.querySelectorAll('#meView dt')].map(e=>e.textContent);assert.equal(profileLabels[profileLabels.indexOf('用户名')+1],'个人简介');assert.ok(document.querySelector('#meView').textContent.includes('Test bio'));
+  document.querySelector('#menuButton').onclick();[...document.querySelectorAll('#menuPanel .menu-item')].find(b=>b.textContent==='聊天').onclick();
+
   for(let i=0;i<20&&!document.querySelector('.dialog-row');i++)await new Promise(r=>setImmediate(r));
   assert.equal(document.body.classList.contains('home-open'),false);
   assert.equal(document.querySelector('#startTitle').textContent,'选择一个会话');
@@ -148,6 +158,39 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   assert.equal(document.querySelector('[data-chat-id="-2000"]'),null);assert.equal(document.body.classList.contains('has-chat'),false);assert.equal(globalThis.uiActions.filter(a=>a.type==='conversation').at(-1).revoke,true);
   await document.querySelector('[data-chat-id="-1001"]').onclick();await document.querySelector('#details').onclick();conversationItem('标记未读');for(let i=0;i<30;i++)await new Promise(r=>setImmediate(r));
   assert.ok(document.querySelector('[data-chat-id="-1001"] .badge.unread-dot'));assert.equal(document.body.classList.contains('has-chat'),false);
+  document.querySelector('#menuButton').onclick();
+  const navItem=label=>[...document.querySelectorAll('#menuPanel .menu-item')].find(b=>b.textContent===label);
+  navItem('联系人').onclick();for(let i=0;i<20;i++)await new Promise(r=>setImmediate(r));
+  const contactRoot=document.querySelector('#contactsView'),contactRow=contactRoot.querySelector('[data-chat-id="-2000"]');
+  assert.ok(contactRoot.classList.contains('peer-list'));assert.ok(document.querySelector('#dialogs').classList.contains('peer-list'));
+  assert.equal(contactRow.querySelector('.row-top strong').textContent,'Contact Alice');assert.equal(contactRow.querySelector('.preview p').textContent,'123456');
+  assert.ok(contactRow.querySelector('.avatar img'));
+  document.querySelector('#search').value='Alice';document.querySelector('#search').oninput();
+  assert.equal(contactRoot.children.length,1);assert.equal(contactRoot.firstElementChild,contactRow,'filtering reuses the contact row and avatar');
+  document.querySelector('#search').value='';document.querySelector('#search').oninput();assert.equal(contactRoot.children.length,2);
+  await contactRow.onclick();assert.equal(document.querySelector('#chatTitle').textContent,'Contact Alice');
+  document.querySelector('#back').onclick();
+  const listPane=document.querySelector('#dialogs'),sidebar=document.querySelector('aside');
+  listPane.scrollTop=200;listPane.dispatchEvent(new window.Event('scroll'));assert.ok(sidebar.classList.contains('header-hidden'));
+  listPane.scrollTop=30;listPane.dispatchEvent(new window.Event('scroll'));assert.ok(sidebar.classList.contains('header-hidden'),'header stays collapsed until the top edge');
+  listPane.scrollTop=0;listPane.dispatchEvent(new window.Event('scroll'));assert.equal(sidebar.classList.contains('header-hidden'),false);
+  document.querySelector('#menuButton').onclick();const meMenu=navItem('我的'),contactsMenu=navItem('联系人');
+  assert.ok(meMenu.querySelector('svg rect'),'my icon is a profile card');assert.equal(contactsMenu.querySelector('svg rect'),null);
+  meMenu.onclick();for(let i=0;i<20;i++)await new Promise(r=>setImmediate(r));
+  const meRoot=document.querySelector('#meView');assert.equal(meRoot.querySelector('h2').textContent,'Test Owner');assert.ok(meRoot.textContent.includes('@test_owner'));assert.ok(meRoot.textContent.includes('+123123'));
+  const action=label=>[...meRoot.querySelectorAll('.profile-action')].find(b=>b.textContent.includes(label));
+  action('切换深色主题').onclick();assert.ok(document.body.classList.contains('dark'));assert.ok(action('切换浅色主题'));
+  action('切换浅色主题').onclick();assert.equal(document.body.classList.contains('dark'),false);
+  action('本地缓存').onclick();assert.equal(document.querySelector('#storageDialog').open,true);document.querySelector('#storageDialog').close();
+  await action('收藏夹').onclick();assert.equal(document.querySelector('#chatTitle').textContent,'收藏夹');
+  document.querySelector('#menuButton').onclick();
+  let logoutButton=document.querySelector('#menuPanel .menu-logout');await logoutButton.onclick();
+  assert.ok(logoutButton.classList.contains('logout-confirm'));assert.equal(logoutButton.textContent,'确认退出');assert.equal(logoutButton.getAttribute('aria-pressed'),'true');assert.ok(logoutButton.querySelector('svg path').getAttribute('d').includes('m5 12'));
+  assert.equal(globalThis.uiActions.filter(a=>a.type==='logout').length,0,'first click does not log out');
+  document.querySelector('#menuPanel .menu-me').dispatchEvent(new window.Event('pointerdown',{bubbles:true}));assert.equal(logoutButton.classList.contains('logout-confirm'),false);assert.equal(logoutButton.textContent,'退出当前账号');
+  await logoutButton.onclick();document.body.dispatchEvent(new window.Event('pointerdown',{bubbles:true}));assert.equal(document.querySelector('#menuPanel').hidden,true);assert.equal(logoutButton.getAttribute('aria-pressed'),'false');
+  document.querySelector('#menuButton').onclick();logoutButton=document.querySelector('#menuPanel .menu-logout');assert.equal(logoutButton.textContent,'退出当前账号');
+  await logoutButton.onclick();await logoutButton.onclick();assert.equal(globalThis.uiActions.filter(a=>a.type==='logout').length,1);assert.equal(logoutButton.classList.contains('logout-confirm'),false);assert.equal(logoutButton.disabled,false);
  }finally{globalThis.setInterval=originalInterval}
 });
 

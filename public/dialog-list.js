@@ -14,7 +14,7 @@ export function matchesDialog(d,tab,query=''){
  if(tab==='unread')return !!(d.unread||d.unreadMark);if(tab==='group')return !!d.group;if(tab==='private')return d.personal===true;return true;
 }
 function text(node,value){const next=String(value??'');if(node.textContent!==next)node.textContent=next}
-export function createDialogList(root,{select,contextMenu,avatar,observeAvatar=()=>{},releaseAvatar=()=>{},formatTime}){
+export function createDialogList(root,{select,contextMenu,avatar,observeAvatar=()=>{},releaseAvatar=()=>{},formatTime,sort=orderDialogs,emptyText='暂无会话'}){
  const records=new Map();let view='',empty;
  return function update(dialogs,{active='',tab='all',query='',connected=false}={}){
   const rootRect=root.getBoundingClientRect?.(),oldScroll=root.scrollTop||0;
@@ -22,7 +22,7 @@ export function createDialogList(root,{select,contextMenu,avatar,observeAvatar=(
   const anchorTop=anchor?.getBoundingClientRect().top;
   const ids=new Set(dialogs.map(d=>d.id));for(const [id,r]of records)if(!ids.has(id)){releaseAvatar(r.av);r.row.remove();records.delete(id)}
   const nodes=[];
-  for(const d of orderDialogs(dialogs).filter(d=>matchesDialog(d,tab,query))){
+  for(const d of sort(dialogs).filter(d=>matchesDialog(d,tab,query))){
    let r=records.get(d.id);if(!r){
     const row=document.createElement('button');row.className='dialog-row';row.dataset.chatId=d.id;row.onclick=()=>select(d.id);
     if(contextMenu){row.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();return contextMenu(d.id,e,row)};row.onkeydown=e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();return contextMenu(d.id,null,row)}}}
@@ -40,7 +40,7 @@ export function createDialogList(root,{select,contextMenu,avatar,observeAvatar=(
    const avatarKey=d.id+':'+(d.avatarKey||'')+':'+(!d.avatarKey?d.title:'');if(r.avatarKey!==avatarKey){releaseAvatar(r.av);r.avatarKey=avatarKey;avatar(r.av,d)}
    nodes.push(r.row);
   }
-  if(!nodes.length&&connected){empty ||= document.createElement('div');empty.className='empty';text(empty,query?'没有搜索结果':tab==='private'?'暂无私聊':'暂无会话');nodes.push(empty)}
+  if(!nodes.length&&connected){empty ||= document.createElement('div');empty.className='empty';text(empty,query?'没有搜索结果':tab==='private'?'暂无私聊':emptyText);nodes.push(empty)}
   reconcileChildren(root,nodes);
   for(const node of nodes)if(node.dataset.chatId){const r=records.get(node.dataset.chatId);if(!r.av.querySelector('img')&&r.av.loadResource)observeAvatar(r.av)}
   const nextView=tab+'\n'+query;if(view!==nextView)root.scrollTop=0;

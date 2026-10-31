@@ -61,3 +61,14 @@ test('native animation keyframes keep the scale curve and fade the circular-scre
  assert.ok(css.includes(expected),'scale curve must stay and edges must fade to opacity 0');
  assert.ok(css.includes('animation-range:entry 0% exit 100%'));
 });
+
+test('contact page uses the same round effect and suspends fallback updates outside its page',()=>{
+ const events={},frames=[],observers=[];let contacts=false;
+ const row={classList:{contains:()=>true},getBoundingClientRect:()=>({top:90,bottom:134}),style:{removeProperty(k){delete this[k]}}};
+ const root={children:[row]};const win={innerWidth:216,innerHeight:216,scrollY:0,addEventListener:(n,f)=>events[n]=f,removeEventListener:n=>delete events[n],requestAnimationFrame:f=>frames.push(f),MutationObserver:class{constructor(fn){observers.push(fn)}observe(){}disconnect(){}}};
+ const controller=installRoundList(root,{win,doc:{body:{}},isVisible:()=>contacts});
+ assert.equal(events.scroll,undefined);assert.equal(frames.length,0);
+ contacts=true;observers[1]();frames.shift()();assert.equal(row.style.transform,roundRowTransform(112/216));
+ win.scrollY=70;events.scroll();frames.shift()();assert.equal(row.style.transform,roundRowTransform(42/216));
+ contacts=false;observers[1]();assert.equal(events.scroll,undefined);controller.destroy();
+});

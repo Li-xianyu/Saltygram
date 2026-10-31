@@ -1,3 +1,4 @@
+import { progressRatio, downloadInParts, createTaskPool } from './media-download.js';
 import { NewMessage } from 'telegram/events/NewMessage.js';
 import { EditedMessage } from 'telegram/events/EditedMessage.js';
 import { Raw } from 'telegram/events/Raw.js';
@@ -143,6 +144,15 @@ export async function getReadState(id,topic=0){
  return {inbox:d?.readInboxMaxId||0,outbox:d?.readOutboxMaxId||0,unread:d?.unreadCount||0,unreadMark:!!d?.unreadMark,broadcast:!!entity?.broadcast,saved:id===memory.owner};
 }
 export async function markRead(id,maxId,topic=0){const {c,peer}=await readyPeer(id);if(topic)await c.invoke(new Api.messages.ReadDiscussion({peer,msgId:topic,readMaxId:maxId}));else await c.markAsRead(peer,undefined,{maxId});return getReadState(id,topic)}
+const downloadWorkers=typeof window!=='undefined'&&window.innerWidth<=480&&window.innerHeight<=540?2:3;
+const mediaPartPool=createTaskPool(downloadWorkers);
+function parallelMediaTarget(message,thumbnail){
+ if(thumbnail)return null;
+ const doc=message.document,photo=message.photo;
+ if(doc)return {size:Number(doc.size),dcId:doc.dcId,location:new Api.InputDocumentFileLocation({id:doc.id,accessHash:doc.accessHash,fileReference:doc.fileReference,thumbSize:''})};
+ if(photo){const size=(photo.sizes||[]).filter(s=>s.w&&s.h&&(s.size||s.sizes?.length)).sort((a,b)=>a.w*a.h-b.w*b.h).at(-1);if(size)return {size:Number(size.size||Math.max(...size.sizes)),dcId:photo.dcId,location:new Api.InputPhotoFileLocation({id:photo.id,accessHash:photo.accessHash,fileReference:photo.fileReference,thumbSize:size.type})}}
+ return null;
+}
 export async function downloadMedia(id, messageId, progress, thumbnail = false) {
   const c = await getClient();if(!peers.has(id)&&!id.startsWith('stickerset:'))await getDialogs(); const key = `${id}:${messageId}`; let m = rawMessages.get(key);
   if (!m && !id.startsWith('stickerset:')) { [m] = await c.getMessages(peers.get(id)||id,{ids:[messageId]});if(m)rawMessages.set(key,m) }
@@ -150,13 +160,29 @@ export async function downloadMedia(id, messageId, progress, thumbnail = false) 
   const sizes=(m.photo?.sizes||m.document?.thumbs||[]).filter(s=>s.w&&s.h).sort((a,b)=>Math.max(a.w,a.h)-Math.max(b.w,b.h));
   const thumb= sizes.filter(s=>Math.max(s.w,s.h)<=640).at(-1)||sizes[0];
   if(thumbnail&&mediaInfo(m)?.kind==='video'&&!thumb)return null;
-  const options = { progressCallback: progress, ...(thumbnail && thumb ? {thumb:thumb.type} : {}) };
-  let data;
-  try { data = await c.downloadMedia(m.className==='Message'?m:m.document||m, options); }
-  catch (e) { if (!String(e.errorMessage || e.message).includes('FILE_REFERENCE')) throw e; [m] = await c.getMessages(peers.get(id) || id, { ids: [messageId] }); rawMessages.set(key, m); data = await c.downloadMedia(m.className==='Message'?m:m.document||m, options); }
-  if (!data?.length) throw Error('媒体为空或无法下载');
-  return new Blob([new Uint8Array(data)], { type: thumbnail&&thumb?'image/jpeg':mediaInfo(m)?.mime || 'application/octet-stream' });
+  let lastProgress=0;
+  const report=(received,total)=>{const ratio=progressRatio(received,total,mediaInfo(m)?.size);if(ratio!==undefined){lastProgress=Math.max(lastProgress,ratio);progress?.(lastProgress)}};
+  const options = { progressCallback: report, ...(thumbnail && thumb ? {thumb:thumb.type} : {}) };
+  const transfer=async()=>{
+   const target=parallelMediaTarget(m,thumbnail);
+   if(target&&target.size>=1024*1024&&target.size<=100*1024*1024&&typeof c.iterDownload==='function'){
+    return downloadInParts({size:target.size,workers:downloadWorkers,onProgress:report,read:(offset)=>mediaPartPool.run(async()=>{
+     const iterator=c.iterDownload({file:target.location,offset:bigInt(offset),limit:1,requestSize:512*1024,chunkSize:512*1024,fileSize:bigInt(target.size),dcId:target.dcId});
+     try{for await(const chunk of iterator)return chunk;return null}finally{await iterator.close?.()}
+    })});
+   }
+   const data=await c.downloadMedia(m.className==='Message'?m:m.document||m,options);
+   if(!data?.length)throw Error('媒体为空或无法下载');return [data];
+  };
+  let parts;
+  try{parts=await transfer()}catch(e){
+   if(!/FILE_REFERENCE|FILEREF_UPGRADE_NEEDED/.test(String(e.errorMessage||e.message)))throw e;
+   [m]=await c.getMessages(peers.get(id)||id,{ids:[messageId]});if(!m)throw Error('媒体消息已不可访问');rawMessages.set(key,m);parts=await transfer();
+  }
+  progress?.(1);
+  return new Blob(parts,{type:thumbnail&&thumb?'image/jpeg':mediaInfo(m)?.mime||'application/octet-stream'});
 }
+
 export async function logout() {
   const c = await getClient();
   try{ await c.invoke(new Api.auth.LogOut()); }catch{}
@@ -230,7 +256,7 @@ function installRealtime(source){
    let chat;try{chat=utils.getPeerId(update.peer||new Api.PeerChannel({channelId:update.channelId})).toString()}catch{return}
    publish({kind:'read',chat,topic:update.topMsgId||0,inbox:type.includes('Inbox')?(update.readMaxId??update.maxId):undefined,outbox:type.includes('Outbox')?(update.readMaxId??update.maxId):undefined,unread:update.stillUnreadCount??update.unreadCount});return;
   }
-  if(['UpdateDialogPinned','UpdatePinnedDialogs','UpdatesTooLong','UpdateChannelTooLong','UpdateChannel','UpdateUserName','UpdateUserPhoto'].includes(type))publish({kind:'sync'});
+  if(['UpdateDialogPinned','UpdatePinnedDialogs','UpdatesTooLong','UpdateChannelTooLong','UpdateChannel','UpdateUserName','UpdateUserPhoto','UpdateUser','UpdateUserPhone','UpdateContactRegistered','UpdateContactsReset'].includes(type))publish({kind:'sync'});
  },new Raw({}));
 }
 
@@ -242,6 +268,11 @@ export async function getConversationInfo(id){
 export async function addContact(id,firstName,lastName=''){
  firstName=String(firstName||'').trim();lastName=String(lastName||'').trim();if(!firstName)throw Error('请填写联系人名字');const info=await getConversationInfo(id);if(!info.canAddContact)throw Error('此会话不支持添加联系人');
  const {c,peer}=await readyPeer(id);await c.invoke(new Api.contacts.AddContact({id:utils.getInputUser(peer),firstName,lastName,phone:'',addPhonePrivacyException:false}));const e=entities.get(id);e.contact=true;e.firstName=firstName;e.lastName=lastName;return getConversationInfo(id);
+}
+export async function getOwnProfile(){
+ const c=await getClient(),full=await c.invoke(new Api.users.GetFullUser({id:new Api.InputUserSelf()}));
+ const me=full.users?.find(u=>u.self)||await c.getMe(),id=me.id.toString();entities.set(id,me);
+ return {id,title:displayName(me),username:me.username||'',about:full.fullUser?.about||'',phone:me.phone||'',avatarKey:me.photo?.photoId?.toString()||''};
 }
 export async function getContacts(){
  const c=await getClient();
