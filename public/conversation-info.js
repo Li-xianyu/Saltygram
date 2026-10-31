@@ -106,8 +106,8 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,onOpenI
   }catch(e){if(activeAudio===record){record.status='error';refreshAudioState()}}
  }
  function toggleAudio(item,peer){if(activeAudio?.item.id===item.id&&activeAudio.status!=='error')openAudioPlayer();else startAudio(item,peer)}
- function openAudioPlayer(){$('.audio-overlay').hidden=false;updateAudioPlayer()}
- function closeAudioPlayer(){$('.audio-overlay').hidden=true}
+ function openAudioPlayer(){$('.audio-overlay').hidden=false;document.body.classList.add('no-scroll');updateAudioPlayer()}
+ function closeAudioPlayer(){$('.audio-overlay').hidden=true;document.body.classList.remove('no-scroll')}
  function updateAudioPlayer(){
   const overlay=$('.audio-overlay');if(!overlay||overlay.hidden)return;
   const record=activeAudio;

@@ -401,22 +401,30 @@ function openSettings(){
  const av=$('#settingsAccountAvatar');
  if(current?.avatarKey)avatar(av,{id:current.owner,title:current.title||'?',avatarKey:current.avatarKey});
  else av.textContent=(current?.title||'?').slice(0,1);
- $('#settingsPage').hidden=false;
+ $('#settingsPage').hidden=false;document.body.classList.add('no-scroll');
 }
 function openVisual(){
  visualSettings=loadVisualSettings();
  $('#fontSizeSlider').value=visualSettings.fontSize;$('#fontSizeValue').textContent=visualSettings.fontSize;
  $('#radiusSlider').value=visualSettings.radius;$('#radiusValue').textContent=visualSettings.radius;
  for(const b of document.querySelectorAll('#scaleSeg button'))b.classList.toggle('selected',Number(b.dataset.scale)===visualSettings.scale);
- $('#visualPage').hidden=false;
+ $('#visualPage').hidden=false;document.body.classList.add('no-scroll');
 }
-$('#settingsBack').onclick=()=>$('#settingsPage').hidden=true;
+$('#settingsBack').onclick=()=>{$('#settingsPage').hidden=true;document.body.classList.remove('no-scroll')};
 $('#settingsVisual').onclick=openVisual;
-$('#visualBack').onclick=()=>$('#visualPage').hidden=true;
+$('#visualBack').onclick=()=>{$('#visualPage').hidden=true};
 $('#fontSizeSlider').oninput=e=>{visualSettings.fontSize=Number(e.target.value);$('#fontSizeValue').textContent=visualSettings.fontSize;applyVisualSettings();persistVisualSettings()};
 $('#radiusSlider').oninput=e=>{visualSettings.radius=Number(e.target.value);$('#radiusValue').textContent=visualSettings.radius;applyVisualSettings();persistVisualSettings()};
 for(const b of document.querySelectorAll('#scaleSeg button'))b.onclick=()=>{visualSettings.scale=Number(b.dataset.scale);for(const x of document.querySelectorAll('#scaleSeg button'))x.classList.toggle('selected',x===b);applyVisualSettings();persistVisualSettings()};
 visualSettings=loadVisualSettings();applyVisualSettings();
+// 图片查看器：双击/双指缩放
+let viewerScale=1,viewerPinch=0,viewerPinchBase=1;
+function resetViewerZoom(){viewerScale=1;viewerPinch=0;const img=$('#viewerContent img');if(img)img.style.transform=''}
+$('#viewerContent').addEventListener('dblclick',e=>{const img=e.target.closest('img');if(!img)return;viewerScale=viewerScale>1?1:2;img.style.transform='scale('+viewerScale+')'});
+$('#viewerContent').addEventListener('touchstart',e=>{if(e.touches.length===2){viewerPinch=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);viewerPinchBase=viewerScale}},{passive:true});
+$('#viewerContent').addEventListener('touchmove',e=>{if(e.touches.length===2&&viewerPinch){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);viewerScale=Math.min(4,Math.max(1,viewerPinchBase*d/viewerPinch));const img=$('#viewerContent img');if(img)img.style.transform='scale('+viewerScale+')'}},{passive:true});
+$('#viewerContent').addEventListener('touchend',()=>{viewerPinch=0});
+$('#mediaViewer').addEventListener('close',resetViewerZoom);
 // Touch list headers collapse until the active list reaches its top edge.
 if(matchMedia('(pointer: coarse)').matches){
  const sidebar=$('aside');
@@ -575,7 +583,7 @@ function stickerCard(m,chat,onSelect=null){
  el.replaceChildren();const animation=lottie.loadAnimation({container:el,renderer:'svg',loop:true,autoplay:!matchMedia('(prefers-reduced-motion: reduce)').matches,animationData:data});stickerAnimations.set(el,animation);
  }else{const node=document.createElement(m.media.stickerType==='video'?'video':'img');node.src=resourceURL(blob);if(node.tagName==='VIDEO'){node.muted=true;node.loop=true;node.autoplay=true;node.playsInline=true}else node.alt=m.media.emoji||'贴纸';node.onerror=()=>{el.textContent=m.media.emoji||'贴纸无法播放'};el.replaceChildren(node)}
  }catch{placeholder.textContent=m.media.emoji||'贴纸加载失败'}};
- visibleResources.observe(el);el.onclick=()=>onSelect?onSelect(m):openStickerSet(chat,m.id);el.onkeydown=e=>{if(e.key==='Enter')el.click()};return el;
+ visibleResources.observe(el);el.onclick=()=>onSelect?onSelect(m):openStickerSet(chat,m.id);el.ondblclick=()=>{if(onSelect)return;const node=el.querySelector('img,video');if(!node?.src)return;$('#viewerContent').replaceChildren();const img=document.createElement('img');img.src=node.src;img.alt=m.media.emoji||'贴纸';$('#viewerContent').append(img);$('#mediaViewer').showModal()};el.onkeydown=e=>{if(e.key==='Enter')el.click()};return el;
 }
 function clearStickerGrid(){for(const [el,anim]of stickerAnimations)if(el.closest('#stickerGrid')){anim.destroy();stickerAnimations.delete(el)}$('#stickerGrid').querySelectorAll('.sticker').forEach(el=>visibleResources.unobserve(el));$('#stickerGrid').replaceChildren()}
 function renderStickerPack(){
