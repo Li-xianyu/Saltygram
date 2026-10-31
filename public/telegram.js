@@ -25,8 +25,9 @@ export async function configure(apiId, apiHash, remember) {
   if (!/^\d+$/.test(String(apiId)) || Number(apiId) <= 0 || !/^[a-f0-9]{32}$/i.test(apiHash)) throw Error('请填写有效的 API ID 和 32 位 API Hash');
   if (client) await client.disconnect();
   client = undefined;
-  const existing = loadAccounts().find(a => a.apiId === Number(apiId) && a.apiHash === apiHash);
-  memory = { apiId: Number(apiId), apiHash, remember, session: existing?.session || '', owner: existing?.owner, title: existing?.title };
+  // Always start from an empty session: QR/code login must run on an
+  // unauthenticated client, not reuse another account's session.
+  memory = { apiId: Number(apiId), apiHash, remember, session: '' };
 }
 async function getClient() {
   if (!memory.apiId || !memory.apiHash) throw Error('请先填写 API ID 和 API Hash');
