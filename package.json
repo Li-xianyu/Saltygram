@@ -8,7 +8,7 @@
     "start": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "node --check public/app.js && node --check public/telegram.js && node --check public/cache.js && node --check public/richtext.js && node --check public/resources.js && node --check public/chat-state.js && node --check public/dialog-list.js && node --check public/round-list.js && node --check public/navigation.js && node --check public/watch-haptics.js && node --check public/cached-resource.js && node --check public/media-download.js && node --check public/media-stream.js && node --check public/mtproto-compat.js && node --check public/public/media-sw.js",
+    "check": "node --check public/app.js && node --check public/telegram.js && node --check public/cache.js && node --check public/richtext.js && node --check public/resources.js && node --check public/chat-state.js && node --check public/dialog-list.js && node --check public/round-list.js && node --check public/navigation.js && node --check public/watch-haptics.js && node --check public/cached-resource.js && node --check public/media-download.js && node --check public/media-stream.js && node --check public/mtproto-compat.js && node --check public/conversation-info.js && node --check public/public/media-sw.js",
     "test": "node --test",
     "test:transport": "node benchmarks/browser-transport.mjs",
     "bench:round-list": "node benchmarks/round-list.mjs"

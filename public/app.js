@@ -12,6 +12,7 @@ import { ungzip } from 'pako';
 import QRCode from 'qrcode';
 import { createResourceLoader, avatarThumbnail } from './resources.js';
 import { installNavigation } from './navigation.js';
+import { createConversationInfo } from './conversation-info.js';
 const resources=createResourceLoader(4);
 const mediaDownloads=createResourceLoader(2);
 const avatarResources=createResourceLoader(4);
@@ -64,11 +65,18 @@ function renderDialogs(){
 }
 function watchDocumentScroll(){return window.innerWidth<=480&&window.innerHeight<=540}
 function messageScroller(){return watchDocumentScroll()?(document.scrollingElement||document.documentElement):$('.conversation')}
+let infoChatScroll=0;
+const infoPage=createConversationInfo({root:$('#conversationInfo'),telegram,avatar,mediaCard,readCache:snapshotGet,writeCache:snapshotPut,watch:watchDocumentScroll,cacheVersion:cacheGeneration,scope:()=>telegram.settings().owner||telegram.cacheScope(),release:root=>{for(const el of root.querySelectorAll('.avatar,.auto-image,.video-card,.sticker')){visibleResources.unobserve(el);const animation=stickerAnimations.get(el);if(animation){animation.destroy();stickerAnimations.delete(el)}}},onBack:()=>nav.goBack(),onMember:item=>{
+ nav.goBack();if(!dialogs.some(d=>d.id===item.id))dialogs.unshift({...item,personal:true,unread:0,text:''});select(item.id);
+}});
+function closeConversationInfo(){const open=document.body.classList.contains('info-open');infoPage.hide();if(open)messageScroller().scrollTop=infoChatScroll}
+function openConversationInfo(record=true,tab){const dialog=dialogs.find(d=>d.id===active);if(!dialog)return;if(!document.body.classList.contains('info-open'))infoChatScroll=messageScroller().scrollTop;if(record)nav.push('info');void infoPage.open(dialog,tab);$('#messages').querySelectorAll('video,audio').forEach(el=>el.pause());if(watchDocumentScroll())messageScroller().scrollTop=0}
 const nav=installNavigation({
- onBackToList:()=>{document.body.classList.remove('chat-open');switchNav('chat',{record:false});if(watchDocumentScroll())messageScroller().scrollTop=0},
- onContacts:()=>{document.body.classList.remove('chat-open');switchNav('contacts',{record:false});if(watchDocumentScroll())messageScroller().scrollTop=0},
- onMe:()=>{document.body.classList.remove('chat-open');switchNav('me',{record:false});if(watchDocumentScroll())messageScroller().scrollTop=0},
- onReopen:({from}={})=>{if(!active)return;switchNav(['contacts','me'].includes(from)?from:'chat',{record:false});document.body.classList.remove('home-open');document.body.classList.add('chat-open','has-chat')}
+ onBackToList:()=>{closeConversationInfo();document.body.classList.remove('chat-open');switchNav('chat',{record:false});if(watchDocumentScroll())messageScroller().scrollTop=0},
+ onContacts:()=>{closeConversationInfo();document.body.classList.remove('chat-open');switchNav('contacts',{record:false});if(watchDocumentScroll())messageScroller().scrollTop=0},
+ onMe:()=>{closeConversationInfo();document.body.classList.remove('chat-open');switchNav('me',{record:false});if(watchDocumentScroll())messageScroller().scrollTop=0},
+ onInfo:()=>openConversationInfo(false),
+ onReopen:({from}={})=>{if(!active)return;closeConversationInfo();switchNav(['contacts','me'].includes(from)?from:'chat',{record:false});document.body.classList.remove('home-open');document.body.classList.add('chat-open','has-chat')}
 });
 function renderMessages(mode='preserve'){
  const root=$('#messages'),pane=messageScroller();const oldHeight=pane.scrollHeight||0,oldTop=pane.scrollTop||0,nearBottom=oldHeight-oldTop-(pane.clientHeight||0)<120;
@@ -98,10 +106,11 @@ function renderMessages(mode='preserve'){
  }
  if(!nodes.length){const empty=previousNodes.get('empty')||document.createElement('div');empty.dataset.listKey='empty';empty.className='empty';if(empty.textContent!=='暂无消息')empty.textContent='暂无消息';nodes.push(empty)}reconcileChildren(root,nodes);
  for(const el of media.values())if(!el.isConnected){visibleResources.unobserve(el);el.querySelectorAll('video,audio').forEach(v=>v.pause());const anim=stickerAnimations.get(el);if(anim){anim.destroy();stickerAnimations.delete(el)}}
- updateHistoryControl();if(mode==='bottom'||(mode==='preserve'&&nearBottom))pane.scrollTop=pane.scrollHeight;else if(mode==='prepend')pane.scrollTop=oldTop+(pane.scrollHeight-oldHeight);else pane.scrollTop=oldTop;
+ updateHistoryControl();if(document.body.classList.contains('info-open'))return;if(mode==='bottom'||(mode==='preserve'&&nearBottom))pane.scrollTop=pane.scrollHeight;else if(mode==='prepend')pane.scrollTop=oldTop+(pane.scrollHeight-oldHeight);else pane.scrollTop=oldTop;
 }
 function updateHistoryControl(){const p=paging();$('#loadOlder').disabled=p.busy;$('#loadOlder').textContent=p.busy?'加载中':p.more?'加载更早消息':'已到最早';$('#loadOlder').hidden=!active;$('#returnLatest').hidden=!p.around}
 async function select(id,topic=0){
+ if(document.body.classList.contains('info-open'))nav.goBack();
  const d=dialogs.find(d=>d.id===id);if(!d)return;const changing=id!==active;readCandidate=0;clearTimeout(readTimer);if(composeContext?.edit)$('#message').value='';active=id;activeTopic=topic;const key=threadKey(),version=++generation;clearCompose();closeMessageMenu();closeConversationMenu();
  document.body.classList.remove('home-open');if(!document.body.classList.contains('chat-open'))nav.push();document.body.classList.add('chat-open','has-chat');$('#emptyState').hidden=true;$('#chatTitle').textContent=d.title;avatar($('#chatAvatar'),d);$('#chatStatus').textContent=d.group?'群组':d.channel?'频道':'';renderDialogs();
  $('#topicsWrap').hidden=!d.forum;if(d.forum&&changing)loadTopics(id);if(d.forum)$('#topicSelect').value=String(topic);
@@ -145,7 +154,7 @@ $('#theme').onclick=()=>{document.body.classList.toggle('dark');localStorage.set
 $('#back').onclick=()=>nav.goBack();
 $('#emoji').onclick=()=>{$('#message').value+=' 😊';$('#message').focus()};
 $('#details').onclick=()=>$('#conversationMenu').hidden?openConversationMenu():closeConversationMenu();
-$('#chatSearch').onclick=()=>{nav.goBack();$('#search').focus()};
+$('#chatIdentity').onclick=()=>openConversationInfo();
 $('#message').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$('#composer').requestSubmit()}};
 $('#composer').onsubmit=async e=>{
  e.preventDefault();const input=$('#message'),text=input.value.trim();if(!text||loading||!active)return;const id=active,topic=activeTopic,key=threadKey(),context=composeContext;
@@ -427,7 +436,6 @@ function imageCard(m,chat){
  card.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();card.click()}};
  return card;
 }
-$('#mediaPanelButton').onclick=()=>{const root=$('#mediaList');root.replaceChildren();for(const m of history[threadKey()]||[])if(m.media)root.append(mediaCard(m,active));if(!root.children.length)root.innerHTML='<div class="empty">当前消息中没有媒体资源</div>';$('#mediaLibrary').showModal()};
 $('#closeMediaLibrary').onclick=()=>{$('#mediaLibrary').close();$('#mediaList').querySelectorAll('video,audio').forEach(el=>el.pause());$('#mediaList').querySelectorAll('.auto-image,.sticker,.video-card').forEach(el=>visibleResources.unobserve(el));$('#mediaList').replaceChildren()};$('#closeViewer').onclick=()=>{$('#mediaViewer').close();$('#viewerContent').replaceChildren()};
 window.addEventListener('beforeunload',()=>{for(const url of mediaCache.values())URL.revokeObjectURL(url);for(const url of objectURLs)URL.revokeObjectURL(url)});
 
@@ -594,7 +602,7 @@ async function openConversationMenu(id=active,event=null,anchor=$('#details')){
  positionMenu(menu,anchor,event);
  try{const info=await telegram.getConversationInfo(id);if(version!==conversationMenuVersion)return;menu.replaceChildren();
  if(info.canAddContact)menu.append(conversationMenuItem(info.contact?'编辑联系人':'添加联系人',()=>openContact(info)));
- menu.append(conversationMenuItem('媒体与文件',async()=>{if(active!==id)await select(id);if(active===id)$('#mediaPanelButton').click()}));
+ menu.append(conversationMenuItem('媒体与文件',async()=>{if(active!==id)await select(id);if(active===id)openConversationInfo(true,'media')}));
  menu.append(conversationMenuItem('标记未读',()=>markUnreadConversation(info)));
  if(info.username)menu.append(conversationMenuItem('复制会话链接',()=>navigator.clipboard.writeText('https://t.me/'+info.username).then(()=>toast('已复制')).catch(()=>toast('复制失败'))));
  if(info.canClear)menu.append(conversationMenuItem(info.forum?'清空整个群组记录':'清空聊天记录',()=>openConversationAction(info,'clear'),{danger:true}));
@@ -626,7 +634,7 @@ $('#confirmConversationAction').onclick=async()=>{
  const keys=new Set([...Object.keys(history),...pages.keys(),...readStates.keys(),threadKey(id,0)].filter(k=>k.startsWith(id+':')));let hasNew=false;
  for(const key of keys){changed(key);const remaining=(history[key]||[]).filter(m=>m.id>cutoff);if(remaining.length)hasNew=true;history[key]=action==='leave'?[]:remaining;for(const m of history[key])if(m.replyId<=cutoff&&m.replyId)m.reply={id:m.replyId,text:'原消息已清理',unavailable:true};pages.set(key,{more:false,busy:false,around:false});readStates.delete(key);initialUnread.delete(key)}
  const remove=result.removed&&(action==='leave'||!hasNew);if(remove){removedConversations.set(id,cutoff);dialogs=dialogs.filter(d=>d.id!==id)}else{const d=dialogs.find(d=>d.id===id),last=(history[threadKey(id,0)]||[]).at(-1);if(d){d.text=last?messagePreview(last):'';d.lastMessageId=last?.id||0;d.date=last?.date;d.time=last?time(last.date):'';d.unread=0;d.unreadMark=false;d.readState={...d.readState,unread:0,inbox:cutoff}}}
- const scope=telegram.cacheScope();if(scope){try{await removeCachePrefixes(['snapshot:messages:','image:','video-thumb:','full:','media:',...(remove?['avatar:']:[])].map(prefix=>scope+':'+prefix+id+':'))}catch{toast('Telegram 已处理，本地缓存清理失败，请手动清理缓存')}}
+ const scope=telegram.cacheScope();if(scope){try{await removeCachePrefixes(['snapshot:messages:','snapshot:info-profile:','snapshot:info-list:','snapshot:info-photo:','image:','video-thumb:','full:','media:',...(remove?['avatar:']:[])].map(prefix=>scope+':'+prefix+id+':'))}catch{toast('Telegram 已处理，本地缓存清理失败，请手动清理缓存')}}
  for(const key of keys)if(history[key]?.length)saveThread(key);snapshotPut('dialogs',dialogs);
  if(active===id){if(remove)exitConversation();else{generation++;readCandidate=0;clearTimeout(readTimer);clearCompose();$('#message').value='';renderMessages('bottom')}}
  renderDialogs();$('#conversationActionDialog').close();toast(result.warning||(action==='clear'?'聊天记录已清空':action==='delete'?'会话已删除':info.broadcast?'已退订频道':'已退出群组'));

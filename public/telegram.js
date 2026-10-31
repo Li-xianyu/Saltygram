@@ -228,9 +228,9 @@ export async function clearLocal() { if(client) await client.disconnect(); clien
 export async function testConnection() { const c = await getClient(); return c.checkAuthorization(); }
 
 
-export async function downloadAvatar(id) {
+export async function downloadAvatar(id,big=false) {
  if(!entities.has(id))await getDialogs();const entity=entities.get(id);if(!entity?.photo)return null;
- const c=await getClient();const data=await c.downloadProfilePhoto(entity,{isBig:false});
+ const c=await getClient();const data=await c.downloadProfilePhoto(entity,{isBig:big});
  return data?.length ? new Blob([new Uint8Array(data)],{type:'image/jpeg'}) : null;
 }
 
@@ -292,6 +292,47 @@ export async function getConversationInfo(id){
  await readyPeer(id);const e=entities.get(id);if(!e)throw Error('无法获取会话信息，请刷新后重试');const user=e.className==='User',group=e.className==='Chat'||!!e.megagroup,saved=id===memory.owner||!!e.self;
  return {id,title:displayName(e),firstName:e.firstName||'',lastName:e.lastName||'',username:e.username||'',contact:!!e.contact,user,bot:!!e.bot,saved,group,channel:e.className==='Channel',broadcast:!!e.broadcast,forum:!!e.forum,
  canAddContact:user&&!e.bot&&!saved&&!e.deleted,canClear:user||e.className==='Chat'||!!e.megagroup,canDelete:user&&!saved,canLeave:(e.className==='Chat'||e.className==='Channel')&&!e.creator};
+}
+function rememberEntities(result){
+ for(const e of [...(result.users||[]),...(result.chats||[])]){
+  const id=utils.getPeerId(e).toString();entities.set(id,e);
+  try{peers.set(id,utils.getInputPeer(e))}catch{}
+ }
+}
+function personSummary(e){return {id:utils.getPeerId(e).toString(),title:displayName(e),avatarKey:e.photo?.photoId?.toString()||'',bot:!!e.bot,status:e.status?{type:e.status.className,wasOnline:e.status.wasOnline,expires:e.status.expires}:null}}
+export async function getConversationProfile(id){
+ const {c,peer}=await readyPeer(id),base=await getConversationInfo(id);let result;
+ if(base.user)result=await c.invoke(new Api.users.GetFullUser({id:utils.getInputUser(peer)}));
+ else if(base.channel)result=await c.invoke(new Api.channels.GetFullChannel({channel:peer}));
+ else result=await c.invoke(new Api.messages.GetFullChat({chatId:bigInt(id.replace(/^-/,''))}));
+ if(c!==client)throw Error('账号已切换');rememberEntities(result);const e=entities.get(id),full=result.fullChat||result.fullUser;
+ let online=full?.onlineCount;
+ if(base.group&&online===undefined){try{online=(await c.invoke(new Api.messages.GetOnlines({peer}))).onlines}catch{}}
+ return {...base,...personSummary(e),about:full?.about||'',members:full?.participantsCount??full?.participants?.participants?.length??e.participantsCount,online,
+ link:base.group?(e.username?'https://t.me/'+e.username:full?.exportedInvite?.link||''):''};
+}
+export async function getConversationMembers(id,offset=0,limit=40){
+ const {c,peer}=await readyPeer(id),info=await getConversationInfo(id);if(!info.group&&!info.channel)return {items:[],more:false,next:0};
+ let result,rows;
+ if(info.channel){result=await c.invoke(new Api.channels.GetParticipants({channel:peer,filter:new Api.ChannelParticipantsRecent(),offset,limit,hash:bigInt.zero}));rows=result.participants||[]}
+ else{result=await c.invoke(new Api.messages.GetFullChat({chatId:bigInt(id.replace(/^-/,''))}));const all=result.fullChat?.participants?.participants;if(!all)throw Error('此群组不允许查看成员');rows=all.slice(offset,offset+limit)}
+ if(c!==client)throw Error('账号已切换');rememberEntities(result);
+ const items=rows.map(p=>{const e=entities.get(p.userId?.toString());return e?{...personSummary(e),role:/Creator/.test(p.className)?'群主':/Admin/.test(p.className)?'管理员':''}:null}).filter(Boolean);
+ return {items,next:offset+rows.length,more:rows.length===limit&&(!result.count||offset+rows.length<result.count)};
+}
+export async function getConversationItems(id,{saved=false,filter='visual',offsetId=0,limit=30}={}){
+ const {c,peer}=await readyPeer(id);
+ const params={offsetId,offsetDate:0,addOffset:0,limit,maxId:0,minId:0,hash:bigInt.zero};
+ let result;
+ if(saved)result=await c.invoke(new Api.messages.GetSavedHistory({peer,...params}));
+ else{
+  const filters={visual:Api.InputMessagesFilterPhotoVideo,file:Api.InputMessagesFilterDocument,audio:Api.InputMessagesFilterMusic,voice:Api.InputMessagesFilterRoundVoice,link:Api.InputMessagesFilterUrl};
+  result=await c.invoke(new Api.messages.Search({peer,q:'',filter:new (filters[filter]||filters.visual)(),minDate:0,maxDate:0,...params}));
+ }
+ if(c!==client)throw Error('账号已切换');rememberEntities(result);const mediaPeer=saved?memory.owner:id;
+ const raw=(result.messages||[]).filter(m=>m.className!=='MessageEmpty');
+ const messages=raw.map(m=>serialize(m,mediaPeer));
+ return {items:messages,mediaPeer,next:raw.at(-1)?.id||0,more:raw.length===limit};
 }
 export async function addContact(id,firstName,lastName=''){
  firstName=String(firstName||'').trim();lastName=String(lastName||'').trim();if(!firstName)throw Error('请填写联系人名字');const info=await getConversationInfo(id);if(!info.canAddContact)throw Error('此会话不支持添加联系人');

@@ -60,3 +60,12 @@ test('my page participates in back and forward history including saved messages'
  nav.push('me');nav.push('me');assert.deepEqual(stack,[{view:'me'}]);nav.push();assert.deepEqual(stack[1],{chat:true,from:'me'});
  nav.goBack();assert.equal(view,'me');nav.goBack();assert.equal(view,'list');pop({view:'me'});assert.equal(view,'me');pop({chat:true,from:'me'});assert.equal(view,'chat');
 });
+
+test('conversation info is a third layer and preserves the chat parent on back and forward',()=>{
+ const {win,stack,pop}=fixture();let view='list';
+ const nav=installNavigation({win,onContacts:()=>view='contacts',onReopen:()=>view='chat',onInfo:()=>view='info'});
+ nav.push('contacts');nav.push();nav.push('info');nav.push('info');
+ assert.deepEqual(stack.at(-1),{view:'info',from:'contacts'});assert.equal(stack.length,3);
+ nav.goBack();assert.equal(view,'chat');pop({chat:true,from:'contacts'});nav.goBack();assert.equal(view,'contacts');
+ pop({view:'info',from:'contacts'});assert.equal(view,'info');nav.goBack();assert.equal(view,'chat');nav.goBack();assert.equal(view,'contacts');
+});

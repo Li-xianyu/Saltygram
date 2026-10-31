@@ -8,7 +8,7 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  export class TelegramClient{
  constructor(session,id,hash,options){globalThis.adapterOptions=options}
  async getMe(){return {id:1,firstName:'Owner',username:'owner',phone:'123',photo:{photoId:8},apiHash:'must-not-leak'}}
- connected=true;addEventHandler(handler,builder){globalThis.adapterEvents.push({handler,builder})}async getDialogs(){return [{id:2,inputEntity:new Api.InputPeerUser({userId:2,accessHash:3}),isUser:true,entity:{className:'User',id:2,firstName:'Peer'},title:'Peer',unreadCount:2,dialog:{pinned:true,readInboxMaxId:30,readOutboxMaxId:40}},{id:'-1000000000008',inputEntity:new Api.InputPeerChannel({channelId:8,accessHash:9}),entity:{className:'Channel',id:8,title:'Group',megagroup:true},title:'Group',dialog:{}},{id:'-7',inputEntity:new Api.InputPeerChat({chatId:7}),entity:{className:'Chat',id:7,title:'Basic'},title:'Basic',dialog:{}}]}
+ connected=true;addEventHandler(handler,builder){globalThis.adapterEvents.push({handler,builder})}async getDialogs(){return [{id:2,inputEntity:new Api.InputPeerUser({userId:2,accessHash:3}),isUser:true,entity:{className:'User',id:2,firstName:'Peer'},title:'Peer',unreadCount:2,dialog:{pinned:true,readInboxMaxId:30,readOutboxMaxId:40}},{id:'-1008',inputEntity:new Api.InputPeerChannel({channelId:8,accessHash:9}),entity:{className:'Channel',id:8,title:'Group',megagroup:true},title:'Group',dialog:{}},{id:'-7',inputEntity:new Api.InputPeerChat({chatId:7}),entity:{className:'Chat',id:7,title:'Basic'},title:'Basic',dialog:{}}]}
  async getMessages(peer,options){globalThis.adapterCalls.push({method:'history',options});if(options.ids?.[0]>=900)return [{className:'Message',id:options.ids[0],document:{id:99,accessHash:3,fileReference:new Uint8Array([1]),dcId:2,size:options.ids[0]===900?100:1048583,mimeType:'video/mp4',attributes:[]}}];return [{className:'Message',id:options.ids?.[0]||50,message:'original',out:false,date:1}]}
  async downloadMedia(m,options){options.progressCallback(50,100);options.progressCallback(100,100);return new Uint8Array(100)}
  iterDownload(options){globalThis.adapterCalls.push({method:'part',options});return {async *[Symbol.asyncIterator](){const offset=Number(options.offset);await new Promise(r=>setImmediate(r));yield new Uint8Array(Math.min(512*1024,1048583-offset)).fill(Math.floor(offset/(512*1024)))},async close(){}}}
@@ -18,6 +18,9 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  async markAsRead(peer,message,options){globalThis.adapterCalls.push({method:'read',options})}
  async invoke(req){globalThis.adapterCalls.push({method:req.className,req});
  if(req.className==='users.GetFullUser')return {fullUser:{about:'My bio'},users:[]};
+ if(req.className==='channels.GetFullChannel')return {fullChat:{participantsCount:80,onlineCount:5,about:'Group',exportedInvite:{link:'https://t.me/+demo'}},users:[],chats:[new Api.Channel({id:8,title:'Group',megagroup:true,photo:new Api.ChatPhotoEmpty(),date:1})]};
+ if(req.className==='channels.GetParticipants')return {count:1,participants:[new Api.ChannelParticipant({userId:2,date:1})],users:[new Api.User({id:2,firstName:'Alice',status:new Api.UserStatusRecently()})]};
+ if(req.className==='messages.Search'||req.className==='messages.GetSavedHistory')return {messages:[new Api.Message({id:800,peerId:new Api.PeerUser({userId:1}),date:1,message:'saved link https://example.com'})],users:[],chats:[]};
  if(req.className==='messages.GetPeerDialogs')return {dialogs:[{readInboxMaxId:50,readOutboxMaxId:49,unreadCount:0}]};
  if(req.className==='messages.GetAllStickers')return {sets:[{id:5,accessHash:6,title:'Pack',shortName:'pack',count:2,installedDate:1}]};
  if(req.className==='messages.GetStickerSet')return {set:{id:5,title:'Pack',shortName:'pack',count:0,installedDate:1},documents:[]};
@@ -57,12 +60,16 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  await api.markConversationUnread('2');assert.equal(globalThis.adapterCalls.find(c=>c.method==='messages.MarkDialogUnread').req.unread,true);
  const cleared=await api.changeConversation('2',{action:'clear'});assert.equal(cleared.removed,false);assert.equal(cleared.cutoff,50);let requests=globalThis.adapterCalls.filter(c=>c.method==='messages.DeleteHistory');assert.equal(requests.at(-1).req.justClear,true);assert.equal(requests.at(-1).req.revoke,false);
  await api.changeConversation('2',{action:'delete',revoke:true});requests=globalThis.adapterCalls.filter(c=>c.method==='messages.DeleteHistory');assert.equal(requests.at(-1).req.justClear,false);assert.equal(requests.at(-1).req.revoke,true);
- await api.changeConversation('-1000000000008',{action:'clear',revoke:true});const groupClear=globalThis.adapterCalls.find(c=>c.method==='channels.DeleteHistory').req;assert.equal(groupClear.forEveryone,false);assert.equal(groupClear.maxId,50);
- await api.changeConversation('-1000000000008',{action:'leave'});assert.ok(globalThis.adapterCalls.some(c=>c.method==='channels.LeaveChannel'));
+ await api.changeConversation('-1008',{action:'clear',revoke:true});const groupClear=globalThis.adapterCalls.find(c=>c.method==='channels.DeleteHistory').req;assert.equal(groupClear.forEveryone,false);assert.equal(groupClear.maxId,50);
+ await api.changeConversation('-1008',{action:'leave'});assert.ok(globalThis.adapterCalls.some(c=>c.method==='channels.LeaveChannel'));
  await api.changeConversation('-7',{action:'leave'});assert.ok(globalThis.adapterCalls.some(c=>c.method==='messages.DeleteChatUser'&&!c.req.revokeHistory));
  const smallProgress=[];const smallBlob=await api.downloadMedia('2',900,p=>smallProgress.push(p));assert.equal(smallBlob.size,100);assert.deepEqual(smallProgress,[.5,1,1]);
  const largeProgress=[];const largeBlob=await api.downloadMedia('2',901,p=>largeProgress.push(p));assert.equal(largeBlob.size,1048583);assert.equal(largeBlob.type,'video/mp4');
  assert.equal(globalThis.adapterCalls.filter(c=>c.method==='part').length,3);assert.ok(largeProgress.every(p=>p>=0&&p<=1));assert.equal(largeProgress.at(-1),1);
  const largeBytes=new Uint8Array(await largeBlob.arrayBuffer());assert.equal(largeBytes[0],0);assert.equal(largeBytes[512*1024],1);assert.equal(largeBytes[1048576],2);
  const sets=await api.getMyStickerSets();assert.equal(sets[0].installed,true);await api.getStickerSetById('5');await api.installStickerSet('5');assert.ok(globalThis.adapterCalls.some(c=>c.method==='messages.InstallStickerSet'&&!c.req.archived));
+ const profile=await api.getConversationProfile('-1008');assert.equal(profile.members,80);assert.equal(profile.online,5);assert.equal(profile.link,'https://t.me/+demo');
+ const members=await api.getConversationMembers('-1008',40);assert.equal(members.items[0].title,'Alice');assert.equal(globalThis.adapterCalls.find(c=>c.method==='channels.GetParticipants').req.offset,40);
+ const saved=await api.getConversationItems('-1008',{saved:true,offsetId:900});assert.equal(saved.mediaPeer,'1');assert.equal(saved.items[0].id,800);const savedReq=globalThis.adapterCalls.find(c=>c.method==='messages.GetSavedHistory').req;assert.equal(savedReq.offsetId,900);assert.ok(!('saved' in savedReq));
+ await api.getConversationItems('2',{filter:'link',offsetId:100});const search=globalThis.adapterCalls.find(c=>c.method==='messages.Search').req;assert.equal(search.filter.className,'InputMessagesFilterUrl');assert.equal(search.offsetId,100);
 });

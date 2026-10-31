@@ -16,6 +16,9 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  export const getOwnProfile=async()=>({id:'1',title:'Test Owner',username:'test_owner',about:'Test bio',phone:'123123',avatarKey:'owner-photo'});export const logout=async()=>{globalThis.uiActions.push({type:'logout'});throw Error('模拟退出失败')};export const listAccounts=()=>[];export const getContacts=async()=>[{id:'-2000',title:'Contact Alice',phone:'123456',avatarKey:'contact-photo'},{id:'-3000',title:'Contact Bob',phone:'654321'}];
  export const getDialogs=async()=>[{id:'-1001',title:'测试群',pinned:true,pinOrder:0,forum:true,group:true,avatarKey:'p1'},{id:'-2000',title:'另一个聊天',unread:0}];
  export const getConversationInfo=async(id)=>{const user=id==='-2000',saved=globalThis.uiActions.find(a=>a.type==='contact'&&a.id===id);return {id,title:saved?saved.first+' '+saved.last:user?'另一个聊天':'测试群',firstName:saved?.first||'Alice',lastName:saved?.last||'',user,contact:!!saved,group:!user,forum:!user,canAddContact:user,canClear:true,canDelete:user,canLeave:!user}};
+ export const getConversationProfile=async id=>({...await getConversationInfo(id),members:12,online:2,link:'https://t.me/example'});
+ export const getConversationMembers=async()=>({items:[{id:'member',title:'成员'}],next:1,more:false});
+ export const getConversationItems=async()=>({items:[],next:0,more:false});
  export const addContact=async(id,first,last)=>{globalThis.uiActions.push({type:'contact',id,first,last});return {id,title:first+' '+last,contact:true}};
  export const markConversationUnread=async(id,unread=true)=>{globalThis.uiActions.push({type:'markUnread',id,unread})};
  export const changeConversation=async(id,options)=>{if(globalThis.failConversationAction)throw Error('模拟权限拒绝');globalThis.uiActions.push({type:'conversation',id,...options});return {removed:options.action!=='clear',cutoff:200}};
@@ -45,7 +48,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  `;
  let app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
  app=app.replace("'./telegram.js'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(adapter).toString('base64')));
- for(const file of ['cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
+ for(const file of ['cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
  app=app.replace("'pako'",JSON.stringify(import.meta.resolve('pako')));
  app=app.replace("'qrcode'",JSON.stringify(import.meta.resolve('qrcode')));
  try{
@@ -67,6 +70,12 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   await document.querySelector('.dialog-row').onclick();
   assert.equal(document.body.classList.contains('home-open'),false);
   for(let i=0;i<200;i++)await new Promise(r=>setImmediate(r));
+  assert.equal(document.querySelector('#chatSearch'),null);assert.equal(document.querySelector('#mediaPanelButton'),null);
+  assert.ok(document.querySelector('#chatIdentity #chatAvatar'));
+  document.querySelector('#chatIdentity').onclick();for(let i=0;i<30;i++)await new Promise(r=>setImmediate(r));
+  assert.equal(document.body.classList.contains('info-open'),true);assert.equal(document.querySelector('.info-name').textContent,'测试群');
+  assert.ok(document.querySelector('.info-status').textContent.includes('12 位成员'));assert.ok(document.querySelector('.info-member'));
+  document.querySelector('.info-back').onclick();assert.equal(document.body.classList.contains('info-open'),false);assert.equal(document.body.classList.contains('chat-open'),true);
   const beforeContextTitle=document.querySelector('#chatTitle').textContent;
   const backgroundRow=document.querySelector('.dialog-row[data-chat-id="-2000"]');
   let prevented=0;
