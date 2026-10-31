@@ -168,21 +168,50 @@ async function startQrLogin(){
 }
 $('#qrLoginButton').onclick=startQrLogin;
 $('#cancelQrLogin').onclick=async()=>{qrLoginActive=false;resetQrLoginUI();await telegram.abortQrLogin()};
-function renderAccounts(){
- const root=$('#accountsList');root.replaceChildren();
- const accounts=telegram.listAccounts();
- for(const a of accounts){
-  const b=document.createElement('button');b.className='account-row';b.type='button';
-  b.textContent=a.title+(a.active?'（当前）':'');
-  b.disabled=a.active;
-  b.onclick=async()=>{try{await telegram.switchAccount(a.owner);location.reload()}catch(e){toast(e.message)}};
-  root.append(b);
- }
- if(!accounts.length){const e=document.createElement('div');e.className='empty';e.textContent='尚未添加账号';root.append(e)}
+const NAV_SVG={
+ chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-8 8H5l-2 2V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8Z"/></svg>',
+ contacts:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
+ me:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></svg>',
+ plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>'
+};
+function closeMenu(){$('#menuPanel').hidden=true;$('#menuButton').setAttribute('aria-expanded','false')}
+function switchNav(key){
+ document.body.classList.toggle('nav-contacts',key==='contacts');
+ document.body.classList.toggle('nav-me',key==='me');
+ if(key==='contacts'&&!$('#contactsView').children.length)$('#contactsView').innerHTML='<div class="empty">联系人功能开发中</div>';
+ if(key==='me'&&!$('#meView').children.length)$('#meView').innerHTML='<div class="empty">「我的」功能开发中</div>';
 }
-$('#connect').onclick=()=>{renderAccounts();$('#accountsDialog').showModal()};
-$('#closeAccounts').onclick=()=>$('#accountsDialog').close();
-$('#addAccount').onclick=()=>{$('#accountsDialog').close();openLogin()};$('#accountAction').onclick=async()=>{if(!connected)openLogin();else{try{await api('/logout',{});location.reload()}catch(e){toast(e.message)}}};$('#closeLogin').onclick=()=>$('#login').close();
+function renderMenu(){
+ const panel=$('#menuPanel');panel.replaceChildren();
+ const accounts=telegram.listAccounts();
+ const current=accounts.find(a=>a.active);
+ const me=document.createElement('div');me.className='menu-me';
+ const av=document.createElement('div');av.className='avatar';av.textContent=(current?.title||'?').slice(0,1);
+ const name=document.createElement('strong');name.textContent=current?.title||'未登录';
+ me.append(av,name);panel.append(me);
+ const divider=()=>{const d=document.createElement('div');d.className='menu-divider';panel.append(d)};
+ divider();
+ for(const a of accounts.filter(a=>!a.active)){
+  const b=document.createElement('button');b.className='menu-item';b.type='button';
+  b.textContent=a.title;
+  b.onclick=async()=>{closeMenu();try{await telegram.switchAccount(a.owner);location.reload()}catch(e){toast(e.message)}};
+  panel.append(b);
+ }
+ if(!accounts.length){const e=document.createElement('div');e.className='menu-empty';e.textContent='尚未添加账号';panel.append(e)}
+ const add=document.createElement('button');add.className='menu-item';add.type='button';
+ add.innerHTML=NAV_SVG.plus+'添加新账号';
+ add.onclick=()=>{closeMenu();openLogin()};
+ panel.append(add);
+ divider();
+ for(const [key,label] of [['chat','聊天'],['contacts','联系人'],['me','我的']]){
+  const b=document.createElement('button');b.className='menu-item';b.type='button';
+  b.innerHTML=NAV_SVG[key]+label;
+  b.onclick=()=>{closeMenu();switchNav(key)};
+  panel.append(b);
+ }
+}
+$('#menuButton').onclick=()=>{if($('#menuPanel').hidden){renderMenu();$('#menuPanel').hidden=false;$('#menuButton').setAttribute('aria-expanded','true')}else closeMenu()};
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('#menuPanel,#menuButton'))closeMenu()});$('#accountAction').onclick=async()=>{if(!connected)openLogin();else{try{await api('/logout',{});location.reload()}catch(e){toast(e.message)}}};$('#closeLogin').onclick=()=>$('#login').close();
 $('#authForm').onsubmit=async e=>{e.preventDefault();const b=$('#authSubmit');b.disabled=true;$('#authError').textContent='';try{const value=$('#authInput').value.trim();if(phase==='phone'){await telegram.configure($('#apiId').value.trim(),$('#apiHash').value.trim(),$('#remember').checked);const data=await api('/auth/code',{phone:value.replace(/\s/g,'')});phase='code';$('#credentials').hidden=true;$('#authLabel').textContent='登录验证码';$('#authHint').textContent=data.viaApp?'请查看 Telegram 官方会话中的验证码。':'请查看 Telegram 或短信中的验证码。';$('#authInput').value='';$('#authInput').type='text';$('#authInput').placeholder='输入验证码';b.textContent='登录'}else{const result=await api('/auth/login',phase==='password'?{password:$('#authInput').value}:{code:value});if(result.passwordRequired){phase='password';$('#authLabel').textContent='两步验证密码';$('#authHint').textContent='你的账号开启了两步验证，请输入密码。';$('#authInput').value='';$('#authInput').type='password';$('#authInput').placeholder='输入两步验证密码'}else{await loadReal();$('#login').close()}}}catch(e){$('#authError').textContent=e.message}finally{b.disabled=false}};
 async function loadReal(){
  const cached=await snapshotGet('dialogs');connected=true;document.body.classList.add('connected');$('#mode').textContent='已连接';$('#accountAction').textContent='退出';
