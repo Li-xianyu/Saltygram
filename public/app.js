@@ -70,7 +70,7 @@ function renderDialogs(){
 function watchDocumentScroll(){return window.innerWidth<=480&&window.innerHeight<=540}
 function messageScroller(){return watchDocumentScroll()?(document.scrollingElement||document.documentElement):$('.conversation')}
 let infoChatScroll=0;
-async function playInfoAudio(message,peer,container){
+async function playInfoAudio(message,peer){
  const key=peer+':'+(message.media.key||message.id);
  const existing=scopeKey('media:'+key),cached=existing?await cacheGet(existing):null;
  let url,stream;
@@ -79,7 +79,7 @@ async function playInfoAudio(message,peer,container){
   if(globalThis.isSecureContext&&navigator.serviceWorker){
    try{
     const reader=await telegram.openMediaReader(peer,message.id);
-    stream=await createMediaStream({...reader,key:scopeKey('media:'+key+':chunk'),alive:()=>container.isConnected&&reader.valid()});
+    stream=await createMediaStream({...reader,key:scopeKey('media:'+key+':chunk'),alive:()=>reader.valid()});
     url=stream?.url;
    }catch{}
   }
@@ -88,7 +88,8 @@ async function playInfoAudio(message,peer,container){
    url=await mediaDownloads.load('audio:'+key,async()=>resourceURL(await cachedBlob('media:'+key,()=>telegram.downloadMedia(peer,message.id))));
   }
  }
- const audio=document.createElement('audio');audio.controls=true;audio.playsInline=true;audio.preload='auto';audio.src=url;
+ const audio=document.createElement('audio');audio.playsInline=true;audio.preload='auto';audio.src=url;
+ if(stream)audio.addEventListener('ended',()=>stream.dispose(),{once:true});
  return audio;
 }
 async function loadAudioCover(message,peer){
