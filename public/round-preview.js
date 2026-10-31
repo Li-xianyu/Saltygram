@@ -12,12 +12,13 @@ export function wantsRoundPreview({width,height,nav,search=''}){
  return !/Android|iPhone|iPad|Mobile|Wear OS|Tizen/i.test(nav.userAgent||'')&&/Windows NT|Macintosh|X11.*(?:x86_64|i[3-6]86)|CrOS/i.test(nav.userAgent||'');
 }
 export function installRoundPreview({win=window,doc=document,nav=navigator}={}){
- let overlay;
+ let overlay,observer;
+ const raise=()=>{if(!overlay)return;try{overlay.hidePopover()}catch{}try{overlay.showPopover()}catch{}};
  const update=()=>{
   const show=wantsRoundPreview({width:win.innerWidth,height:win.innerHeight,nav,search:win.location?.search||''});
-  if(show&&!overlay){overlay=doc.createElement('div');overlay.id='roundScreenPreview';overlay.setAttribute('aria-hidden','true');doc.body.append(overlay)}
-  else if(!show&&overlay){overlay.remove();overlay=null}
+  if(show&&!overlay){overlay=doc.createElement('div');overlay.id='roundScreenPreview';overlay.setAttribute('aria-hidden','true');overlay.setAttribute('popover','manual');doc.body.append(overlay);try{overlay.showPopover()}catch{}const MO=win.MutationObserver||(typeof MutationObserver!=='undefined'?MutationObserver:null);if(MO){observer=new MO(raise);observer.observe(doc.body,{attributes:true,subtree:true,attributeFilter:['open']})}}
+  else if(!show&&overlay){observer?.disconnect();observer=null;overlay.remove();overlay=null}
  };
  update();win.addEventListener('resize',update,{passive:true});win.addEventListener('popstate',update);
- return ()=>{win.removeEventListener('resize',update);win.removeEventListener('popstate',update);overlay?.remove()};
+ return ()=>{win.removeEventListener('resize',update);win.removeEventListener('popstate',update);observer?.disconnect();overlay?.remove()};
 }
