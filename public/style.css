@@ -84,4 +84,4 @@ body:not(.has-chat) main>.chat-header,body:not(.has-chat) main>.conversation,bod
   #dialogs.native-round-scroll .dialog-row{animation:round-dialog-expand linear both;animation-timeline:view();animation-range:entry 0% exit 100%}
  }
 }
-@keyframes round-dialog-expand{0%,100%{transform:scale(.66)}10%,90%{transform:scale(.78)}20%,80%{transform:scale(.88)}30%,70%{transform:scale(.95)}40%,60%{transform:scale(.99)}50%{transform:scale(1)}}
+@keyframes round-dialog-expand{0%,100%{transform:scale(.66);opacity:0}10%,90%{transform:scale(.78);opacity:.36}20%,80%{transform:scale(.88);opacity:.64}30%,70%{transform:scale(.95);opacity:.84}40%,60%{transform:scale(.99);opacity:.96}50%{transform:scale(1);opacity:1}}

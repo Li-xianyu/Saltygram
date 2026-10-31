@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {roundRowTransform,installRoundList} from '../public/round-list.js';
+import {roundRowTransform,roundRowOpacity,installRoundList} from '../public/round-list.js';
 test('scrolling changes existing row scale and desktop resize removes watch transforms',()=>{
  const events={},frames=[],values={};let center=108;
  const row={classList:{contains:()=>true},offsetWidth:203,offsetHeight:56,getBoundingClientRect:()=>({top:center-28,bottom:center+28}),style:{removeProperty(k){delete this[k]}}};
@@ -28,6 +28,12 @@ test('fallback scale curve keeps the 3-decimal output at every sampled position'
   assert.equal(roundRowTransform(y),'scale('+scale.toFixed(3)+')');
  }
 });
+test('edge fade keeps centered rows opaque and fades only near the arcs',()=>{
+ for(let i=-1000;i<=11000;i++){
+  const y=i/10000,distance=Math.min(1,Math.abs(y-.5)*2);
+  assert.equal(roundRowOpacity(y),y<0||y>1?1:1-distance*distance);
+ }
+});
 test('native timeline installs no JavaScript scroll work or geometry observers',()=>{
  let added=0,removed=0;const root={classList:{add(){added++},remove(){removed++}}};
  const fail=()=>{throw Error('native path must not register JS work')};
@@ -48,10 +54,10 @@ test('preview refresh reuses geometry; structural changes invalidate it; suspens
  events.scroll();list.destroy();frames.shift()();assert.equal(events.scroll,undefined);
 });
 
-test('native animation keyframes keep the original scale curve and drop the text-blurring spread',async()=>{
+test('native animation keyframes keep the scale curve and fade the circular-screen edges',async()=>{
  const {readFile}=await import('node:fs/promises');
  const css=await readFile(new URL('../public/style.css',import.meta.url),'utf8');
- const expected='@keyframes round-dialog-expand{0%,100%{transform:scale(.66)}10%,90%{transform:scale(.78)}20%,80%{transform:scale(.88)}30%,70%{transform:scale(.95)}40%,60%{transform:scale(.99)}50%{transform:scale(1)}}';
- assert.ok(css.includes(expected),'scale curve must stay; only the blurring scaleX spread is removed');
+ const expected='@keyframes round-dialog-expand{0%,100%{transform:scale(.66);opacity:0}10%,90%{transform:scale(.78);opacity:.36}20%,80%{transform:scale(.88);opacity:.64}30%,70%{transform:scale(.95);opacity:.84}40%,60%{transform:scale(.99);opacity:.96}50%{transform:scale(1);opacity:1}}';
+ assert.ok(css.includes(expected),'scale curve must stay and edges must fade to opacity 0');
  assert.ok(css.includes('animation-range:entry 0% exit 100%'));
 });

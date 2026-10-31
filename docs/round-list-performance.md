@@ -2,11 +2,15 @@
 
 This optimization preserves the current UI, CSS keyframes, overscan (one viewport
 above and below), scale curve, and native document scrolling. It does not
-change avatar resolution, row spacing, opacity, hit targets, ordering or features.
+change avatar resolution, row spacing, hit targets, ordering or features.
 
 The horizontal spread (`scaleX` 1..1.02) was removed later to keep centered rows
 at 1:1 so small watch text is not re-rasterized and blurred by the scale
 animation. The vertical scale curve (0.66..1) is unchanged.
+
+A matching opacity fade (`1 - distance²`) was added so rows near the circular
+screen's upper/lower arcs fade to transparent, softening the hard cut. Centered
+rows stay fully opaque; the fade only affects the extreme edges.
 
 ## Two execution paths
 

@@ -6,6 +6,13 @@ export function roundRowTransform(y){
  const scale=y<0||y>1?1:1-.34*distance*distance;
  return 'scale('+scale.toFixed(3)+')';
 }
+// Edge fade matches the scale curve: centered rows are fully opaque and rows
+// near the circular screen's upper/lower arcs fade out so the cut stays soft.
+export function roundRowOpacity(y){
+ if(y<0||y>1)return 1;
+ const distance=Math.min(1,Math.abs(y-.5)*2);
+ return 1-distance*distance;
+}
 export function installRoundList(root,{win=window,doc=document}={}){
  // CSS owns this path completely: no scroll handler, RAF or geometry observer.
  // Keep the CSS keyframes independent: they are the existing native effect.
@@ -15,7 +22,7 @@ export function installRoundList(root,{win=window,doc=document}={}){
  }
  let disposed=false,active=false,queued=false,frame,dirty=true,lastScroll=NaN;
  let items=[],start=0,end=0;
- const reset=item=>{if(item.transform!==null){item.row.style.removeProperty('transform');item.transform=null}};
+ const reset=item=>{if(item.transform!==null){item.row.style.removeProperty('transform');item.transform=null}if(item.opacity!==null){item.row.style.removeProperty('opacity');item.opacity=null}};
  const lowerBound=value=>{let lo=0,hi=items.length;while(lo<hi){const mid=(lo+hi)>>>1;if(items[mid].center<value)lo=mid+1;else hi=mid}return lo};
  const visible=()=>win.innerWidth<=480&&win.innerHeight<=540&&!doc.hidden&&!doc.body?.classList?.contains('chat-open')&&!doc.body?.classList?.contains('home-open');
  const draw=()=>{
@@ -27,17 +34,19 @@ export function installRoundList(root,{win=window,doc=document}={}){
    // queries: scaling uses normalized row centers, not the old circle solver.
    for(let i=start;i<end;i++)reset(items[i]);
    items=[...root.children].filter(row=>row.classList.contains('dialog-row')).map(row=>{
-    const r=row.getBoundingClientRect();return {row,center:(r.top+r.bottom)/2+scroll,transform:null};
+    const r=row.getBoundingClientRect();return {row,center:(r.top+r.bottom)/2+scroll,transform:null,opacity:null};
    });
    start=end=0;dirty=false;
   }
   const nextStart=lowerBound(scroll-height),nextEnd=lowerBound(scroll+height*2);
   for(let i=start;i<end;i++)if(i<nextStart||i>=nextEnd)reset(items[i]);
   // The hot path allocates no arrays or sets and never reads CSSOM/layout.
-  // Transform strings are written only when their rendered value changes.
+  // Transform/opacity are written only when their rendered value changes.
   for(let i=nextStart;i<nextEnd;i++){
-   const item=items[i],transform=roundRowTransform((item.center-scroll)/height);
+   const item=items[i],y=(item.center-scroll)/height;
+   const transform=roundRowTransform(y),opacity=roundRowOpacity(y);
    if(item.transform!==transform){item.row.style.transform=transform;item.transform=transform}
+   if(item.opacity!==opacity){item.row.style.opacity=opacity;item.opacity=opacity}
   }
   start=nextStart;end=nextEnd;lastScroll=scroll;
  };
