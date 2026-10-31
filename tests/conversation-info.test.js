@@ -18,7 +18,7 @@ test('media has only three image/video filters and music is an independent categ
  const page=createConversationInfo({root,watch:()=>true,avatar(){},galleryTile:()=>{const button=document.createElement('button');button.className='info-media-tile';return button},readCache:async()=>null,writeCache:async()=>{},roundList:(r,options)=>{roundOptions=options;return {refresh(){},destroy(){destroyed++}}},telegram:{getConversationProfile:async()=>({id:'chat',title:'会话'}),getConversationItems:async(id,options)=>{calls.push(options);return {items:options.filter==='audio'?[{id:3,media:{kind:'audio',audioTitle:'Song',performer:'Artist',duration:125}}]:items,more:false,mediaPeer:id}}}});
  await page.open({id:'chat',title:'会话'});await ticks();
  assert.deepEqual(INFO_TABS.map(t=>t[0]),['members','media','saved','music','files','voice','links']);
- assert.deepEqual([...root.querySelectorAll('.info-filter option')].map(o=>o.textContent),['全部','图片','视频']);
+ assert.deepEqual([...root.querySelectorAll('.info-filter-menu button')].map(o=>o.textContent),['全部','图片','视频']);
  assert.equal(root.querySelectorAll('.info-media-tile').length,2);assert.equal(root.querySelector('.info-list').textContent,'');assert.equal(root.querySelectorAll('.info-grid-row').length,1);
  root.querySelector('[data-info-tab="music"]').onclick();await ticks();assert.equal(calls.at(-1).filter,'audio');assert.equal(root.querySelector('.info-filter').hidden,true);assert.equal(root.querySelector('.info-attachment strong').textContent,'Song');
  assert.deepEqual(attachmentLabel({media:{audioTitle:'Song',performer:'Artist',duration:125}}),{title:'Song',detail:'Artist · 2:05'});
