@@ -7,6 +7,7 @@ import { mergePage, mergeLatest, reconcileMessages, messagePreview, deliveryStat
 import { richText, safeURL } from './richtext.js';
 import { ungzip } from 'pako';
 import { createResourceLoader, avatarThumbnail } from './resources.js';
+import { installNavigation } from './navigation.js';
 const resources=createResourceLoader(4);
 const avatarResources=createResourceLoader(4);
 const objectURLs=new Set();
@@ -56,6 +57,7 @@ function renderDialogs(){
 }
 function watchDocumentScroll(){return window.innerWidth<=480&&window.innerHeight<=540}
 function messageScroller(){return watchDocumentScroll()?(document.scrollingElement||document.documentElement):$('.conversation')}
+const nav=installNavigation({onBackToList:()=>{document.body.classList.remove('chat-open');if(watchDocumentScroll())messageScroller().scrollTop=0},onReopen:()=>{if(!active)return;document.body.classList.remove('home-open');document.body.classList.add('chat-open','has-chat')}});
 function renderMessages(mode='preserve'){
  const root=$('#messages'),pane=messageScroller();const oldHeight=pane.scrollHeight||0,oldTop=pane.scrollTop||0,nearBottom=oldHeight-oldTop-(pane.clientHeight||0)<120;
  const media=new Map([...root.querySelectorAll('[data-media-key]')].map(el=>[el.dataset.mediaKey,el]));
@@ -89,7 +91,7 @@ function renderMessages(mode='preserve'){
 function updateHistoryControl(){const p=paging();$('#loadOlder').disabled=p.busy;$('#loadOlder').textContent=p.busy?'加载中':p.more?'加载更早消息':'已到最早';$('#loadOlder').hidden=!active;$('#returnLatest').hidden=!p.around}
 async function select(id,topic=0){
  const d=dialogs.find(d=>d.id===id);if(!d)return;const changing=id!==active;readCandidate=0;clearTimeout(readTimer);if(composeContext?.edit)$('#message').value='';active=id;activeTopic=topic;const key=threadKey(),version=++generation;clearCompose();closeMessageMenu();closeConversationMenu();
- document.body.classList.remove('home-open');document.body.classList.add('chat-open','has-chat');$('#emptyState').hidden=true;$('#chatTitle').textContent=d.title;avatar($('#chatAvatar'),d);$('#chatStatus').textContent=d.group?'群组':d.channel?'频道':'';renderDialogs();
+ document.body.classList.remove('home-open');if(!document.body.classList.contains('chat-open'))nav.push();document.body.classList.add('chat-open','has-chat');$('#emptyState').hidden=true;$('#chatTitle').textContent=d.title;avatar($('#chatAvatar'),d);$('#chatStatus').textContent=d.group?'群组':d.channel?'频道':'';renderDialogs();
  $('#topicsWrap').hidden=!d.forum;if(d.forum&&changing)loadTopics(id);if(d.forum)$('#topicSelect').value=String(topic);
  if(d.unreadMark)telegram.markConversationUnread(id,false).then(()=>{d.unreadMark=false;snapshotPut('dialogs',dialogs);renderDialogs()}).catch(()=>{});
  if(!readStates.has(key)&&!topic&&d.readState)readStates.set(key,d.readState);if(currentRead(key).unread)initialUnread.set(key,currentRead(key).inbox||0);
@@ -128,10 +130,10 @@ async function jumpToMessage(chat,id){
 $('#search').oninput=renderDialogs;
 for(const b of document.querySelectorAll('[data-tab]'))b.onclick=()=>{tab=b.dataset.tab;document.querySelector('.tabs .selected')?.classList.remove('selected');b.classList.add('selected');renderDialogs()};
 $('#theme').onclick=()=>{document.body.classList.toggle('dark');localStorage.setItem('xy-theme',document.body.classList.contains('dark')?'dark':'light')};if(localStorage.getItem('xy-theme')==='dark')document.body.classList.add('dark');
-$('#back').onclick=()=>{document.body.classList.remove('chat-open');if(watchDocumentScroll())messageScroller().scrollTop=0};
+$('#back').onclick=()=>nav.goBack();
 $('#emoji').onclick=()=>{$('#message').value+=' 😊';$('#message').focus()};
 $('#details').onclick=()=>$('#conversationMenu').hidden?openConversationMenu():closeConversationMenu();
-$('#chatSearch').onclick=()=>{document.body.classList.remove('chat-open');$('#search').focus()};
+$('#chatSearch').onclick=()=>{nav.goBack();$('#search').focus()};
 $('#message').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$('#composer').requestSubmit()}};
 $('#composer').onsubmit=async e=>{
  e.preventDefault();const input=$('#message'),text=input.value.trim();if(!text||loading||!active)return;const id=active,topic=activeTopic,key=threadKey(),context=composeContext;
@@ -417,7 +419,7 @@ $('#contactForm').onsubmit=async e=>{e.preventDefault();if(!contactTarget)return
 async function markUnreadConversation(info){try{await telegram.markConversationUnread(info.id);const d=dialogs.find(d=>d.id===info.id);if(d)d.unreadMark=true;if(active===info.id)exitConversation();snapshotPut('dialogs',dialogs);renderDialogs();toast('已标记未读')}catch(e){toast(e.errorMessage||e.message)}}
 function exitConversation(){
  generation++;readCandidate=0;clearTimeout(readTimer);readObserver.disconnect();$('#messages').querySelectorAll('video,audio').forEach(el=>el.pause());$('#messages').querySelectorAll('[data-media-key]').forEach(el=>visibleResources.unobserve(el));for(const [el,anim]of stickerAnimations)if(el.closest('#messages')){anim.destroy();stickerAnimations.delete(el)}
- active='';activeTopic=0;clearCompose();$('#message').value='';$('#messages').replaceChildren();document.body.classList.remove('has-chat','chat-open');$('#emptyState').hidden=false;updateStartPage();$('#topicsWrap').hidden=true;$('#loadOlder').hidden=true;closeMessageMenu();closeConversationMenu();
+ active='';activeTopic=0;clearCompose();$('#message').value='';$('#messages').replaceChildren();document.body.classList.remove('has-chat','chat-open');$('#emptyState').hidden=false;updateStartPage();$('#topicsWrap').hidden=true;$('#loadOlder').hidden=true;closeMessageMenu();closeConversationMenu();nav.goBack();
 }
 function openConversationAction(info,action){
  conversationAction={info,action};const name=info.title;
