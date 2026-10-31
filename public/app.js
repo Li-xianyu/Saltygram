@@ -392,8 +392,7 @@ function persistVisualSettings(){try{localStorage.setItem(SETTINGS_KEY,JSON.stri
 function applyVisualSettings(){
  document.documentElement.style.setProperty('--message-font-size',visualSettings.fontSize+'px');
  document.documentElement.style.setProperty('--bubble-radius',visualSettings.radius+'px');
- const meta=document.querySelector('meta[name="viewport"]');
- if(meta)meta.setAttribute('content','width=device-width,initial-scale='+visualSettings.scale+',maximum-scale='+visualSettings.scale);
+ document.documentElement.style.zoom=visualSettings.scale;
 }
 function openSettings(){
  const accounts=telegram.listAccounts(),current=accounts.find(a=>a.active);
