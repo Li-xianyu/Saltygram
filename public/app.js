@@ -195,7 +195,11 @@ function renderMenu(){
  divider();
  for(const a of accounts.filter(a=>!a.active)){
   const b=document.createElement('button');b.className='menu-item';b.type='button';
-  b.textContent=a.title;
+  const av=document.createElement('div');av.className='avatar';
+  if(a.avatarKey)avatar(av,{id:a.owner,title:a.title||'?',avatarKey:a.avatarKey});
+  else av.textContent=(a.title||'?').slice(0,1);
+  const label=document.createElement('span');label.textContent=a.title;
+  b.append(av,label);
   b.onclick=async()=>{closeMenu();try{await telegram.switchAccount(a.owner);location.reload()}catch(e){toast(e.message)}};
   panel.append(b);
  }
