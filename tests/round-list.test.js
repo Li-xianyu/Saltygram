@@ -50,6 +50,20 @@ test('nested information blocks animate in a chat without adding layout reads to
  const list=installRoundList(root,{win,doc,rowSelector:'.info-round-item',allowChat:true});frames.shift()();assert.equal(reads,1);assert.ok(row.style.transform);
  reads=0;win.scrollY=20;events.scroll();frames.shift()();assert.equal(reads,0);list.destroy();assert.equal(events.scroll,undefined);
 });
+
+test('full-screen panel uses its own scrolling and accounts for CSS zoom on the home screen',()=>{
+ const events={},scrollEvents={},frames=[];let reads=0,scale=1.4,shown=true;
+ const scroller={scrollTop:0,addEventListener:(name,fn)=>scrollEvents[name]=fn,removeEventListener:name=>delete scrollEvents[name]};
+ const row={hidden:false,getBoundingClientRect(){reads++;const center=100-scroller.scrollTop*scale;return {top:center-20,bottom:center+20}},style:{removeProperty(k){delete this[k]}}};
+ const root={querySelectorAll:()=>[row]};
+ const win={innerWidth:240,innerHeight:240,scrollY:900,addEventListener:(name,fn)=>events[name]=fn,removeEventListener:name=>delete events[name],requestAnimationFrame:fn=>frames.push(fn)};
+ const doc={body:{classList:{contains:name=>name==='home-open'}}};
+ const panel=installRoundList(root,{win,doc,rowSelector:'.panel-round-item',allowHome:true,scrollRoot:scroller,getScale:()=>scale,isVisible:()=>shown});
+ frames.shift()();assert.equal(row.style.transform,roundRowTransform(100/240));assert.equal(events.scroll,undefined);assert.ok(scrollEvents.scroll);
+ reads=0;scroller.scrollTop=30;scrollEvents.scroll();frames.shift()();assert.equal(reads,0);assert.equal(row.style.transform,roundRowTransform((100-42)/240));
+ scale=1.2;panel.refresh({geometry:true});frames.shift()();assert.equal(reads,1);assert.equal(row.style.transform,roundRowTransform((100-36)/240));
+ shown=false;panel.refresh();assert.equal(scrollEvents.scroll,undefined);panel.destroy();
+});
 test('preview refresh reuses geometry; structural changes invalidate it; suspension stops frames',()=>{
  const events={},frames=[],observers=[];let reads=0,writes=0,hidden=false,transform='';
  const row={classList:{contains:()=>true},getBoundingClientRect(){reads++;return {top:80,bottom:124}},style:{set transform(v){writes++;transform=v},get transform(){throw Error('no CSSOM reads')},removeProperty(){writes++;transform=''}}};

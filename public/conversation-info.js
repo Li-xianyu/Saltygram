@@ -205,5 +205,5 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,onOpenI
   void loadPage({refresh:true});
   try{const profile=await telegram.getConversationProfile(id);if(!valid(version,id))return;paintProfile(profile);if(canCache(version,id))void writeCache('info-profile:'+id+':profile',profile);void fullPhoto(version,id)}catch{if(valid(version,id))text('.info-status','信息同步失败，可返回后重试')}
  }
- return {open,hide};
+ return {open,hide,closeAudioPlayer};
 }

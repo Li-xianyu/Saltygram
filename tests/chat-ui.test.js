@@ -48,7 +48,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  `;
  let app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
  app=app.replace("'./telegram.js'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(adapter).toString('base64')));
- for(const file of ['cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
+ for(const file of ['video-policy.js','media-viewer.js','page-gestures.js','swipe-close.js','cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
  app=app.replace("'pako'",JSON.stringify(import.meta.resolve('pako')));
  app=app.replace("'qrcode'",JSON.stringify(import.meta.resolve('qrcode')));
  try{
@@ -95,6 +95,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   assert.equal(document.querySelector('#messages .message-buttons button').textContent,'刷新');
   assert.ok(document.querySelector('#messages .auto-image img').getAttribute('src')?.startsWith('blob:'),document.querySelector('#messages .auto-image').outerHTML);
   assert.ok(!document.querySelector('#messages').textContent.includes('不要显示.webp'));
+  const portrait=document.querySelector('#messages .auto-image img');Object.assign(portrait,{naturalWidth:120,naturalHeight:960});portrait.onload();assert.equal(portrait.parentElement.style.width,'40px');
   assert.ok(document.querySelector('#messages .sticker img'));
   assert.ok(document.querySelector('.dialog-row .avatar img'));
   assert.equal(document.querySelector('#topicsWrap').hidden,false);
@@ -105,9 +106,10 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   assert.ok(!document.querySelector('#messages').textContent.includes('不显示视频名称.mp4'));
   assert.ok(!globalThis.uiMediaCalls.some(c=>c.id===104&&!c.thumbnail),'video body must wait for user click');
   await videoCard.querySelector('.video-play').onclick();
-  assert.ok(videoCard.querySelector('video.inline-video').src?.startsWith('blob:'));
+  for(let i=0;i<20;i++)await new Promise(r=>setImmediate(r));assert.equal(document.querySelector('#mediaViewer').open,true);assert.equal(videoCard.querySelector('video'),null);assert.ok(document.querySelector('#viewerContent video.inline-video').src?.startsWith('blob:'));document.querySelectorAll('#viewerContent video').forEach(v=>v.pause=()=>{});document.querySelector('#closeViewer').onclick();
   assert.ok(globalThis.uiMediaCalls.some(c=>c.id===104&&!c.thumbnail));
-  videoCard.querySelector('video').pause=()=>{};
+  assert.equal(videoCard.querySelector('video'),null);
+  videoCard.querySelector('.video-expand').onclick();for(let i=0;i<20;i++)await new Promise(r=>setImmediate(r));assert.equal(document.querySelector('#mediaViewer').open,true);assert.ok(parseFloat(document.querySelector('#viewerContent .video-card').style.width)>0);document.querySelectorAll('#viewerContent video').forEach(v=>v.pause=()=>{});document.querySelector('#closeViewer').onclick();assert.equal(document.querySelector('#mediaViewer').open,false);
  
   document.querySelector('#topicSelect').value='42';await document.querySelector('#topicSelect').onchange();
   assert.equal(globalThis.uiCalls.at(-1).topic,42);
@@ -131,7 +133,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   // Foreign pack installation and personal pack sending use separate buttons.
   await document.querySelector('#messages .sticker').onclick();await document.querySelector('#installStickerPack').onclick();assert.equal(globalThis.uiActions.find(a=>a.type==='install').setId,'other');
   document.querySelector('#closeStickerPack').onclick();await document.querySelector('#myStickers').onclick();for(let i=0;i<40;i++)await new Promise(r=>setImmediate(r));
-  await document.querySelector('.sticker-set-row').onclick();await document.querySelector('#stickerGrid .sticker').onclick();
+  await document.querySelector('.sticker-set-row').onclick();assert.ok(document.querySelector('#stickerGrid .sticker-pack-row.panel-round-item'));assert.ok(document.querySelector('#closeStickerPack svg'));await document.querySelector('#stickerGrid .sticker').onclick();
   assert.equal(globalThis.uiActions.find(a=>a.type==='sticker').source,'stickerset:mine');
   // Read receipt is emitted only for a visible incoming message in the active topic.
   const readObserver=globalThis.testObservers.find(o=>o.options?.root);readObserver.fn([{isIntersecting:true,intersectionRatio:1,target:document.querySelector('[data-message-id="150"]')}]);
@@ -200,6 +202,34 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   await logoutButton.onclick();document.body.dispatchEvent(new window.Event('pointerdown',{bubbles:true}));assert.equal(document.querySelector('#menuPanel').hidden,true);assert.equal(logoutButton.getAttribute('aria-pressed'),'false');
   document.querySelector('#menuButton').onclick();logoutButton=document.querySelector('#menuPanel .menu-logout');assert.equal(logoutButton.textContent,'退出当前账号');
   await logoutButton.onclick();await logoutButton.onclick();assert.equal(globalThis.uiActions.filter(a=>a.type==='logout').length,1);assert.equal(logoutButton.classList.contains('logout-confirm'),false);assert.equal(logoutButton.disabled,false);
+  document.querySelector('#menuButton').onclick();const originalMenuRow=document.querySelector('#menuPanel .menu-me');document.querySelector('#menuPanel').scrollTop=37;[...document.querySelectorAll('#menuPanel .menu-item')].find(b=>b.textContent==='设置').onclick();assert.equal(document.querySelector('#menuPanel').hidden,false);
+  assert.equal(document.querySelector('#settingsPage').hidden,false);document.querySelector('#settingsVisual').onclick();assert.equal(document.querySelector('#visualPage').hidden,false);
+  document.querySelector('#scaleSeg [data-scale="1.4"]').onclick();assert.equal(String(document.documentElement.style.zoom),'1.4');
+  const swipeBack=id=>{
+   const panel=document.querySelector(id);panel.getBoundingClientRect=()=>({width:240});
+   for(const [type,x]of [['pointerdown',10],['pointermove',150],['pointerup',150]]){
+    const event=new window.Event(type,{bubbles:true,cancelable:true});
+    Object.defineProperties(event,{pointerId:{value:4},clientX:{value:x},clientY:{value:80},button:{value:0}});panel.dispatchEvent(event);
+   }
+  };
+  assert.equal(document.querySelector('#menuPanel').hidden,false);
+  swipeBack('#visualPage');assert.equal(document.querySelector('#visualPage').hidden,true);assert.equal(document.querySelector('#settingsPage').hidden,false);
+  swipeBack('#settingsPage');assert.equal(document.querySelector('#settingsPage').hidden,true);assert.equal(document.body.classList.contains('no-scroll'),false);assert.equal(document.querySelector('#menuPanel').hidden,false);assert.equal(document.querySelector('#menuButton').getAttribute('aria-expanded'),'true');assert.equal(document.querySelector('#menuPanel .menu-me'),originalMenuRow);assert.equal(document.querySelector('#menuPanel').scrollTop,37);
+  window.innerWidth=390;window.innerHeight=700;
+  [...document.querySelectorAll('#menuPanel .menu-item')].find(b=>b.textContent==='联系人').onclick();
+  for(let i=0;i<10;i++)await new Promise(r=>setImmediate(r));
+  assert.equal(document.querySelector('#menuPanel').hidden,false);assert.ok(document.querySelector('#menuPanel').classList.contains('menu-route-parent'));
+  await document.querySelector('#contactsView [data-chat-id="-2000"]').onclick();
+  assert.ok(document.body.classList.contains('chat-open'));
+  swipeBack('main');assert.equal(document.body.classList.contains('chat-open'),false);assert.ok(document.body.classList.contains('nav-contacts'));
+  swipeBack('#contactsPage');assert.equal(document.body.classList.contains('nav-contacts'),false);assert.equal(document.querySelector('#menuPanel').hidden,false);
+  swipeBack('#menuPanel');assert.equal(document.querySelector('#menuPanel').hidden,true);
+  await document.querySelector('#dialogs [data-chat-id="-1001"]').onclick();
+  document.querySelector('#chatIdentity').onclick();for(let i=0;i<10;i++)await new Promise(r=>setImmediate(r));
+  assert.ok(document.body.classList.contains('info-open'));
+  swipeBack('#conversationInfo');assert.equal(document.body.classList.contains('info-open'),false);assert.ok(document.body.classList.contains('chat-open'));
+  swipeBack('main');assert.equal(document.body.classList.contains('chat-open'),false);
+  assert.equal(document.body.classList.contains('swipe-route-chat'),false);assert.equal(document.body.classList.contains('swipe-route-info'),false);
  }finally{globalThis.setInterval=originalInterval}
 });
 

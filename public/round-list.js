@@ -13,7 +13,7 @@ export function roundRowOpacity(y){
  const distance=Math.min(1,Math.abs(y-.5)*2);
  return 1-distance*distance;
 }
-export function installRoundList(root,{win=window,doc=document,isVisible=()=>true,rowSelector=null,allowChat=false}={}){
+export function installRoundList(root,{win=window,doc=document,isVisible=()=>true,rowSelector=null,allowChat=false,allowHome=false,scrollRoot=win,getScale=()=>1}={}){
  // CSS owns this path completely: no scroll handler, RAF or geometry observer.
  // Keep the CSS keyframes independent: they are the existing native effect.
  if(win.CSS?.supports?.('animation-timeline','view()')){
@@ -24,10 +24,12 @@ export function installRoundList(root,{win=window,doc=document,isVisible=()=>tru
  let items=[],start=0,end=0;
  const reset=item=>{if(item.transform!==null){item.row.style.removeProperty('transform');item.transform=null}if(item.opacity!==null){item.row.style.removeProperty('opacity');item.opacity=null}};
  const lowerBound=value=>{let lo=0,hi=items.length;while(lo<hi){const mid=(lo+hi)>>>1;if(items[mid].center<value)lo=mid+1;else hi=mid}return lo};
- const visible=()=>isVisible()&&win.innerWidth<=480&&win.innerHeight<=540&&!doc.hidden&&(allowChat||!doc.body?.classList?.contains('chat-open'))&&!doc.body?.classList?.contains('home-open');
+ const visible=()=>isVisible()&&win.innerWidth<=480&&win.innerHeight<=540&&!doc.hidden&&(allowChat||!doc.body?.classList?.contains('chat-open'))&&(allowHome||!doc.body?.classList?.contains('home-open'));
  const draw=()=>{
   queued=false;if(disposed||!active)return;
-  const height=win.innerHeight,scroll=win.scrollY||0;
+  // Rects are viewport CSS pixels after CSS zoom; an element's scrollTop is
+  // unzoomed. Convert only the scroll offset so both coordinates agree.
+  const height=win.innerHeight,scroll=scrollRoot===win?(win.scrollY||0):(scrollRoot.scrollTop||0)*(Number(getScale())||1);
   if(!dirty&&scroll===lastScroll)return;
   if(dirty){
    // One batched geometry pass only on structural changes. No width/height
@@ -59,9 +61,9 @@ export function installRoundList(root,{win=window,doc=document,isVisible=()=>tru
   const next=visible();
   if(next!==active){
    active=next;dirty=true;
-   if(active)win.addEventListener('scroll',schedule,{passive:true});
+   if(active)scrollRoot.addEventListener('scroll',schedule,{passive:true});
    else{
-    win.removeEventListener('scroll',schedule);
+    scrollRoot.removeEventListener('scroll',schedule);
     if(queued&&win.cancelAnimationFrame)win.cancelAnimationFrame(frame);
     queued=false;
     if(win.innerWidth>480||win.innerHeight>540){for(let i=start;i<end;i++)reset(items[i]);items=[];start=end=0}
@@ -72,14 +74,14 @@ export function installRoundList(root,{win=window,doc=document,isVisible=()=>tru
  const invalidate=()=>{dirty=true;sync()};
  // Rendering an unchanged preview is not a geometry invalidation. Membership,
  // resize, font metrics and view transitions have their own invalidators.
- const refresh=()=>{if(!children){dirty=true;sync()}else if(visible()!==active)sync();else if(dirty)schedule()};
+ const refresh=({geometry=false}={})=>{if(geometry)dirty=true;if(!children){dirty=true;sync()}else if(visible()!==active)sync();else if(dirty)schedule()};
  win.addEventListener('resize',invalidate);doc.addEventListener?.('visibilitychange',sync);
  const Observer=win.MutationObserver;let children,body,resize;
  if(Observer){children=new Observer(invalidate);children.observe(root,{childList:true,subtree:!!rowSelector});if(doc.body){body=new Observer(invalidate);body.observe(doc.body,{attributes:true,attributeFilter:['class']})}}
  if(win.ResizeObserver){resize=new win.ResizeObserver(invalidate);resize.observe(root)}
  doc.fonts?.ready?.then(invalidate);sync();
  return {refresh,destroy(){
-  disposed=true;win.removeEventListener('scroll',schedule);win.removeEventListener('resize',invalidate);doc.removeEventListener?.('visibilitychange',sync);
+  disposed=true;scrollRoot.removeEventListener('scroll',schedule);win.removeEventListener('resize',invalidate);doc.removeEventListener?.('visibilitychange',sync);
   if(queued&&win.cancelAnimationFrame)win.cancelAnimationFrame(frame);
   children?.disconnect();body?.disconnect();resize?.disconnect();for(let i=start;i<end;i++)reset(items[i]);items=[];
  }};
