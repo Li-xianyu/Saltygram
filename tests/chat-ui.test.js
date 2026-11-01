@@ -31,7 +31,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  {id:104,text:'',date:1,media:{kind:'video',key:'vid4',mime:'video/mp4',name:'不显示视频名称.mp4',duration:65,width:1280,height:720,size:120}},
  {id:105,text:'我的消息',date:1,out:true,canEdit:true,canDelete:true,deleteForEveryone:true,private:true,senderName:'我'},
  {id:106,text:'回复内容',date:1,replyId:101,replyPeer:'-1001',reply:{id:101,text:'打开链接',senderName:'Peer'}},
- ...Array.from({length:44},(_,i)=>({id:107+i,text:'消息'+(107+i),date:1}))
+ ...Array.from({length:44},(_,i)=>i===1?{id:108,text:'',date:1,media:{kind:'audio',audioTitle:'Shared Song',performer:'Artist',name:'secret-name.flac',duration:120}}:({id:107+i,text:'消息'+(107+i),date:1}))
  ]};
  export const downloadMedia=async(chat,id,progress,thumbnail)=>{globalThis.uiMediaCalls.push({id,thumbnail});return new Blob(['media'],{type:thumbnail?'image/jpeg':'video/mp4'})};export const downloadAvatar=async()=>new Blob(['avatar'],{type:'image/jpeg'});
  export const pressButton=async()=>({message:'完成'});
@@ -48,7 +48,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  `;
  let app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
  app=app.replace("'./telegram.js'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(adapter).toString('base64')));
- for(const file of ['video-policy.js','media-viewer.js','page-gestures.js','swipe-close.js','cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
+ for(const file of ['audio-player.js','video-policy.js','media-viewer.js','page-gestures.js','swipe-close.js','cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
  app=app.replace("'pako'",JSON.stringify(import.meta.resolve('pako')));
  app=app.replace("'qrcode'",JSON.stringify(import.meta.resolve('qrcode')));
  try{
@@ -97,6 +97,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   assert.ok(!document.querySelector('#messages').textContent.includes('不要显示.webp'));
   const portrait=document.querySelector('#messages .auto-image img');Object.assign(portrait,{naturalWidth:120,naturalHeight:960});portrait.onload();assert.equal(portrait.parentElement.style.width,'40px');
   assert.ok(document.querySelector('#messages .sticker img'));
+  const audioRow=document.querySelector('[data-message-id="108"] .audio-track');assert.ok(audioRow);assert.equal(audioRow.querySelector('strong').textContent,'Shared Song');assert.equal(audioRow.querySelector('.media-action'),null);assert.ok(!audioRow.textContent.includes('secret-name.flac'));
   assert.ok(document.querySelector('.dialog-row .avatar img'));
   assert.equal(document.querySelector('#topicsWrap').hidden,false);
   const videoCard=document.querySelector('#messages .video-card');

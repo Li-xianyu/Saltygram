@@ -1,3 +1,4 @@
+import {createAudioPlayer,createAudioRow} from './audio-player.js';
 import { isLoopVideo } from './video-policy.js';
 import { installMediaViewer } from './media-viewer.js';
 import { installPageGestures } from './page-gestures.js';
@@ -96,7 +97,7 @@ async function playInfoAudio(message,peer){
   }
  }
  const audio=document.createElement('audio');audio.playsInline=true;audio.preload='auto';audio.src=url;
- if(stream)audio.addEventListener('ended',()=>stream.dispose(),{once:true});
+ audio.disposeMedia=()=>stream?.dispose();
  return audio;
 }
 async function loadAudioCover(message,peer){
@@ -108,7 +109,8 @@ async function loadAudioCover(message,peer){
   });
  }catch{return null}
 }
-const infoPage=createConversationInfo({root:$('#conversationInfo'),telegram,avatar,galleryTile:infoGalleryTile,onOpenItem:openInfoItem,onPlayAudio:playInfoAudio,coverLoader:loadAudioCover,readCache:snapshotGet,writeCache:snapshotPut,watch:watchDocumentScroll,cacheVersion:cacheGeneration,scope:()=>telegram.settings().owner||telegram.cacheScope(),release:root=>{if(root.matches('.info-media-tile'))visibleResources.unobserve(root);for(const el of root.querySelectorAll('.avatar,.auto-image,.video-card,.sticker,.info-media-tile')){visibleResources.unobserve(el);const animation=stickerAnimations.get(el);if(animation){animation.destroy();stickerAnimations.delete(el)}}},onBack:()=>nav.goBack(),onMember:item=>{
+const audioPlayer=createAudioPlayer({load:playInfoAudio,coverLoader:loadAudioCover});
+const infoPage=createConversationInfo({audioPlayer,root:$('#conversationInfo'),telegram,avatar,galleryTile:infoGalleryTile,onOpenItem:openInfoItem,onPlayAudio:playInfoAudio,coverLoader:loadAudioCover,readCache:snapshotGet,writeCache:snapshotPut,watch:watchDocumentScroll,cacheVersion:cacheGeneration,scope:()=>telegram.settings().owner||telegram.cacheScope(),release:root=>{if(root.matches('.info-media-tile'))visibleResources.unobserve(root);for(const el of root.querySelectorAll('.avatar,.auto-image,.video-card,.sticker,.info-media-tile')){visibleResources.unobserve(el);const animation=stickerAnimations.get(el);if(animation){animation.destroy();stickerAnimations.delete(el)}}},onBack:()=>nav.goBack(),onMember:item=>{
  nav.goBack();if(!dialogs.some(d=>d.id===item.id))dialogs.unshift({...item,personal:true,unread:0,text:''});select(item.id);
 }});
 function closeConversationInfo(){const open=document.body.classList.contains('info-open');infoPage.hide();if(open)messageScroller().scrollTop=infoChatScroll}
@@ -159,7 +161,7 @@ function renderMessages(mode='preserve'){
  if(m.replyId){const quote=document.createElement('button');quote.className='reply-quote';quote.setAttribute('aria-label','查看引用消息');const name=document.createElement('strong');name.textContent=m.reply?.senderName||'引用消息';const text=document.createElement('span');text.textContent=m.reply?messagePreview(m.reply):'原消息 #'+m.replyId;quote.append(name,text);quote.onclick=()=>jumpToMessage(m.replyPeer||active,m.replyId);bubble.append(quote)}
  if(m.text)bubble.append(richText(m.text,m.entities));
  if(m.media){
- if(m.media.kind==='image')bubble.classList.add('image-bubble');if(m.media.kind==='video')bubble.classList.add('video-bubble');if(m.media.kind==='sticker')bubble.classList.add('sticker-bubble');
+ if(m.media.kind==='image')bubble.classList.add('image-bubble');if(m.media.kind==='video')bubble.classList.add('video-bubble');if(m.media.kind==='sticker')bubble.classList.add('sticker-bubble');if(m.media.kind==='audio')bubble.classList.add('audio-bubble');
  const key=active+':'+m.id+':'+m.media.kind+':'+(m.media.key||'');const node=media.get(key)||mediaCard(m,active);node.dataset.mediaKey=key;bubble.append(node);
  }
  if(m.webpage){const url=safeURL(m.webpage.url);if(url){const link=document.createElement('a');link.className='web-preview';link.href=url;link.target='_blank';link.rel='noopener noreferrer';const title=document.createElement('strong');title.textContent=m.webpage.title||new URL(url).hostname;const desc=document.createElement('span');desc.textContent=(m.webpage.description||'').slice(0,250);link.append(title,desc);bubble.append(link)}}
@@ -357,7 +359,7 @@ function renderMenu(){
   else av.textContent=(a.title||'?').slice(0,1);
   const label=document.createElement('span');label.textContent=a.title;
   b.append(av,label);
-  b.onclick=async()=>{closeMenu();try{await telegram.switchAccount(a.owner);location.reload()}catch(e){toast(e.message)}};
+  b.onclick=async()=>{closeMenu();try{audioPlayer.stop();await telegram.switchAccount(a.owner);location.reload()}catch(e){toast(e.message)}};
   panel.append(b);
  }
  if(!accounts.length){const e=document.createElement('div');e.className='menu-empty';e.textContent='尚未添加账号';panel.append(e)}
@@ -375,7 +377,7 @@ function renderMenu(){
     logout.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>确认退出';return;
    }
    logoutPending=true;logout.disabled=true;closeMenu();
-   try{await api('/logout',{});location.reload()}catch(e){toast(e.message)}finally{logoutPending=false;logout.disabled=false}
+   try{audioPlayer.stop();await api('/logout',{});location.reload()}catch(e){toast(e.message)}finally{logoutPending=false;logout.disabled=false}
   };
   panel.append(logout);
  }
@@ -480,7 +482,7 @@ document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='k'){
 function bytes(n){return n>=1073741824?(n/1073741824).toFixed(1)+' GiB':n>=1048576?(n/1048576).toFixed(1)+' MiB':n>=1024?(n/1024).toFixed(1)+' KiB':(n||0)+' B'}
 const mediaCache=new Map();
 function mediaCard(m,chat){
- if(m.media.kind==='image')return imageCard(m,chat);if(m.media.kind==='sticker')return stickerCard(m,chat);if(m.media.kind==='video')return videoCard(m,chat);
+ if(m.media.kind==='image')return imageCard(m,chat);if(m.media.kind==='sticker')return stickerCard(m,chat);if(m.media.kind==='video')return videoCard(m,chat);if(m.media.kind==='audio')return createAudioRow(m,chat,{player:audioPlayer,coverLoader:loadAudioCover});
  const info=m.media,card=document.createElement('div');card.className='media-card';
  const title=document.createElement('div');title.className='media-name';title.textContent=({image:'▧ 图片',video:'▷ 视频',audio:'♫ 音频',file:'▱ 文件',unsupported:'◇ 其他媒体'}[info.kind]||'媒体')+' · '+info.name;card.append(title);
  if(info.kind==='unsupported'){const hint=document.createElement('div');hint.className='media-size';hint.textContent='此类型暂不支持预览';card.append(hint);return card}
@@ -577,9 +579,9 @@ function imageCard(m,chat){
  card.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();card.click()}};
  return card;
 }
-$('#closeMediaLibrary').onclick=()=>{$('#mediaLibrary').close();$('#mediaList').querySelectorAll('video,audio').forEach(el=>el.pause());$('#mediaList').querySelectorAll('.auto-image,.sticker,.video-card').forEach(el=>visibleResources.unobserve(el));$('#mediaList').replaceChildren()};$('#closeViewer').onclick=()=>{$('#viewerContent').querySelectorAll('.video-card').forEach(card=>card.disposeMedia?.());$('#viewerContent').querySelectorAll('video,audio').forEach(el=>el.pause());$('#mediaViewer').close();$('#viewerContent').replaceChildren()};
-$('#mediaViewer').addEventListener('close',()=>{$('#viewerContent').querySelectorAll('.video-card').forEach(card=>card.disposeMedia?.());$('#viewerContent').querySelectorAll('video,audio').forEach(el=>el.pause());$('#viewerContent').querySelectorAll('.auto-image,.sticker,.video-card').forEach(el=>visibleResources.unobserve(el));$('#viewerContent').replaceChildren()});
-window.addEventListener('beforeunload',()=>{for(const url of mediaCache.values())URL.revokeObjectURL(url);for(const url of objectURLs)URL.revokeObjectURL(url)});
+$('#closeMediaLibrary').onclick=()=>{$('#mediaList').querySelectorAll('.audio-track').forEach(row=>row.disposeMedia?.());$('#mediaLibrary').close();$('#mediaList').querySelectorAll('video,audio').forEach(el=>el.pause());$('#mediaList').querySelectorAll('.auto-image,.sticker,.video-card').forEach(el=>visibleResources.unobserve(el));$('#mediaList').replaceChildren()};$('#closeViewer').onclick=()=>{$('#viewerContent').querySelectorAll('.audio-track').forEach(row=>row.disposeMedia?.());$('#viewerContent').querySelectorAll('.video-card').forEach(card=>card.disposeMedia?.());$('#viewerContent').querySelectorAll('video,audio').forEach(el=>el.pause());$('#mediaViewer').close();$('#viewerContent').replaceChildren()};
+$('#mediaViewer').addEventListener('close',()=>{$('#viewerContent').querySelectorAll('.audio-track').forEach(row=>row.disposeMedia?.());$('#viewerContent').querySelectorAll('.video-card').forEach(card=>card.disposeMedia?.());$('#viewerContent').querySelectorAll('video,audio').forEach(el=>el.pause());$('#viewerContent').querySelectorAll('.auto-image,.sticker,.video-card').forEach(el=>visibleResources.unobserve(el));$('#viewerContent').replaceChildren()});
+window.addEventListener('beforeunload',()=>{audioPlayer.stop();for(const url of mediaCache.values())URL.revokeObjectURL(url);for(const url of objectURLs)URL.revokeObjectURL(url)});
 
 $('#testConnection').onclick=async()=>{const b=$('#testConnection');b.disabled=true;$('#authError').textContent='正在通过 WSS 连接 Telegram…';try{await telegram.configure($('#apiId').value.trim(),$('#apiHash').value.trim(),$('#remember').checked);await telegram.testConnection();$('#authError').textContent='直连成功，可以获取验证码登录。'}catch(e){$('#authError').textContent=e.errorMessage||e.message}finally{b.disabled=false}};
 $('#clearLocal').onclick=async()=>{await telegram.clearLocal();location.reload()};
@@ -708,7 +710,7 @@ async function flushRead(key){
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(active)renderMessages();if(document.body.classList.contains('nav-contacts'))void loadContacts();if(document.body.classList.contains('nav-me'))void loadProfile()}});window.addEventListener('focus',()=>{if(active)renderMessages()});
 
 $('#stickerPack').addEventListener('close',()=>{packGeneration++;clearStickerGrid()});
-$('#mediaLibrary').addEventListener('close',()=>{$('#mediaList').querySelectorAll('video,audio').forEach(el=>el.pause());$('#mediaList').querySelectorAll('.auto-image,.sticker,.video-card').forEach(el=>visibleResources.unobserve(el));$('#mediaList').replaceChildren()});
+$('#mediaLibrary').addEventListener('close',()=>{$('#mediaList').querySelectorAll('.audio-track').forEach(row=>row.disposeMedia?.());$('#mediaList').querySelectorAll('video,audio').forEach(el=>el.pause());$('#mediaList').querySelectorAll('.auto-image,.sticker,.video-card').forEach(el=>visibleResources.unobserve(el));$('#mediaList').replaceChildren()});
 
 const seenLive=new Set();let liveRenderQueued=false,liveChatDirty=false,dialogSyncTimer;
 function scheduleLiveRender(chatChanged=false){liveChatDirty ||= chatChanged;if(liveRenderQueued)return;liveRenderQueued=true;queueMicrotask(()=>{liveRenderQueued=false;const draw=liveChatDirty;liveChatDirty=false;renderDialogs();if(draw&&active&&!document.hidden)renderMessages()})}
@@ -830,7 +832,7 @@ const finishPreview=()=>document.body.classList.remove('swipe-route-list','swipe
 for(const button of document.querySelectorAll('.route-back'))button.onclick=()=>nav.goBack();
 const pageGestures=installPageGestures({
  dialogSwipe:dialog=>dialog.id!=='mediaViewer'||viewerUI.canSwipe(),
- dialogClose:dialog=>{const button=$('#'+dialogBackButtons[dialog.id]);if(button?.onclick)button.onclick();else dialog.close()},
+ dialogClose:dialog=>{if(dialog.id==='audioPlayer'){audioPlayer.close();return}const button=$('#'+dialogBackButtons[dialog.id]);if(button?.onclick)button.onclick();else dialog.close()},
  layers:[
   {root:()=>$('#visualPage'),visible:shown,close:closeVisual},
   {root:()=>$('#settingsPage'),visible:shown,close:closeSettings},

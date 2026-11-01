@@ -1,3 +1,4 @@
+import {createAudioPlayer,createAudioRow} from './audio-player.js';
 import {safeURL,richText} from './richtext.js';
 import {reconcileChildren} from './dialog-list.js';
 import {installRoundList} from './round-list.js';
@@ -26,14 +27,15 @@ export function conversationStatus(profile){
  return ({UserStatusRecently:'最近在线',UserStatusLastWeek:'一周内在线',UserStatusLastMonth:'一个月内在线'})[status?.type]||'最近上线时间不可见';
 }
 
-export function createConversationInfo({root,telegram,avatar,galleryTile,onOpenItem=()=>{},onPlayAudio=()=>null,coverLoader=()=>null,readCache,writeCache,watch,onBack,onMember,release=()=>{},scope=()=>null,cacheVersion=()=>0,roundList=installRoundList}){
- let generation=0,current,tab='members',filter='visual',pages=new Map(),photoURL,owner,cacheEpoch,renderedKey='',records=new Map(),round,columns=3,activeAudio=null,audioIconRefs=new Map();
+export function createConversationInfo({root,telegram,avatar,galleryTile,audioPlayer,onOpenItem=()=>{},onPlayAudio=()=>null,coverLoader=()=>null,readCache,writeCache,watch,onBack,onMember,release=()=>{},scope=()=>null,cacheVersion=()=>0,roundList=installRoundList}){
+ let generation=0,current,tab='members',filter='visual',pages=new Map(),photoURL,owner,cacheEpoch,renderedKey='',records=new Map(),round,columns=3;
+ const player=audioPlayer||createAudioPlayer({doc:root.ownerDocument,load:onPlayAudio,coverLoader});
  const $=selector=>root.querySelector(selector);
  const valid=(version,id)=>version===generation&&current?.id===id&&!root.hidden&&scope()===owner;
  const canCache=(version,id)=>valid(version,id)&&cacheVersion()===cacheEpoch;
  const text=(selector,value)=>{$(selector).textContent=value};
- function stop(){root.querySelectorAll('video,audio').forEach(el=>el.pause());release(root);if(photoURL){URL.revokeObjectURL(photoURL);photoURL=null}}
- function hide(){generation++;round?.destroy();round=null;stop();stopAudio();root.hidden=true;document.body.classList.remove('info-open');if(typeof window!=='undefined')window.removeEventListener('scroll',onScroll);root.removeEventListener('scroll',onScroll);document.removeEventListener('pointerdown',onDocPointer);document.removeEventListener('touchstart',onTouchStart);document.removeEventListener('touchmove',onTouchMove);document.removeEventListener('touchend',onTouchEnd);root.replaceChildren();records.clear();pages.clear();renderedKey='';audioIconRefs.clear()}
+ function stop(){root.querySelectorAll('.audio-track').forEach(row=>row.disposeMedia?.());root.querySelectorAll('video,audio').forEach(el=>el.pause());release(root);if(photoURL){URL.revokeObjectURL(photoURL);photoURL=null}}
+ function hide(){generation++;round?.destroy();round=null;stop();root.hidden=true;document.body.classList.remove('info-open');if(typeof window!=='undefined')window.removeEventListener('scroll',onScroll);root.removeEventListener('scroll',onScroll);document.removeEventListener('pointerdown',onDocPointer);document.removeEventListener('touchstart',onTouchStart);document.removeEventListener('touchmove',onTouchMove);document.removeEventListener('touchend',onTouchEnd);root.replaceChildren();records.clear();pages.clear();renderedKey=''}
  let lastScrollY=0,edgeTouch=false;
  const scrollTop=()=>watch()?(document.scrollingElement||document.documentElement).scrollTop:root.scrollTop;
  function touchEdge(e){
@@ -83,64 +85,10 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,onOpenI
   }catch{ /* Keep the small avatar if the full photo is unavailable. */ }
  }
  function pageKey(){return tab+':'+(tab==='media'?filter:'all')}
- function fmtTime(s){s=Math.max(0,Math.floor(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
- function applyAudioIcon(icon,status){icon.classList.toggle('audio-loading',status==='loading');icon.classList.toggle('audio-playing',status==='playing')}
- function refreshAudioState(){for(const [id,ref]of audioIconRefs){if(ref.icon.isConnected)applyAudioIcon(ref.icon,activeAudio?.item.id===id?activeAudio.status:null)}}
- function stopAudio(){if(!activeAudio)return;activeAudio.audio?.pause();activeAudio.audio=null;activeAudio=null;refreshAudioState();updateAudioPlayer()}
- async function startAudio(item,peer){
-  stopAudio();
-  const record={item,peer,audio:null,status:'loading',cover:null};
-  activeAudio=record;
-  refreshAudioState();updateAudioPlayer();
-  if(item.media?.cover)coverLoader(item,peer).then(url=>{if(activeAudio===record){record.cover=url;refreshAudioState();updateAudioPlayer()}}).catch(()=>{});
-  try{
-   const audio=await onPlayAudio(item,peer);
-   if(activeAudio!==record)return;
-   record.audio=audio;record.status='playing';
-   audio.addEventListener('timeupdate',updateAudioPlayer);
-   audio.addEventListener('ended',()=>{if(activeAudio===record){record.status='paused';refreshAudioState();updateAudioPlayer()}});
-   audio.addEventListener('pause',()=>{if(activeAudio===record){record.status='paused';refreshAudioState();updateAudioPlayer()}});
-   audio.addEventListener('play',()=>{if(activeAudio===record){record.status='playing';refreshAudioState();updateAudioPlayer()}});
-   refreshAudioState();updateAudioPlayer();
-   audio.play().catch(()=>{});
-  }catch(e){if(activeAudio===record){record.status='error';refreshAudioState()}}
- }
- function toggleAudio(item,peer){if(activeAudio?.item.id===item.id&&activeAudio.status!=='error')openAudioPlayer();else startAudio(item,peer)}
- function openAudioPlayer(){$('.audio-overlay').hidden=false;document.body.classList.add('no-scroll');updateAudioPlayer()}
- function closeAudioPlayer(){$('.audio-overlay').hidden=true;document.body.classList.remove('no-scroll')}
- function updateAudioPlayer(){
-  const overlay=$('.audio-overlay');if(!overlay||overlay.hidden)return;
-  const record=activeAudio;
-  if(!record){closeAudioPlayer();return}
-  const media=record.item.media;
-  $('.audio-title').textContent=media?.audioTitle||media?.name||record.item.text||'音频';
-  $('.audio-artist').textContent=media?.performer||'';
-  const audio=record.audio,cur=audio?.currentTime||0,dur=audio?.duration||media?.duration||0;
-  $('.audio-time').textContent=dur?fmtTime(cur)+' / '+fmtTime(dur):'';
-  const ring=$('.audio-ring-fg'),circumference=2*Math.PI*90,progress=dur?cur/dur:0;
-  ring.style.strokeDasharray=String(circumference);
-  ring.style.strokeDashoffset=String(circumference*(1-Math.min(1,progress)));
-  const cover=$('.audio-disc-cover');
-  if(record.cover){if(cover.dataset.cover!==record.cover){cover.dataset.cover=record.cover;cover.style.backgroundImage='url("'+record.cover+'")';cover.textContent=''}}
-  else if(!cover.textContent)cover.textContent='♫';
-  const state=$('.audio-disc-state');
-  state.classList.toggle('loading',record.status==='loading');
-  state.classList.toggle('playing',record.status==='playing');
-  state.classList.toggle('paused',record.status==='paused'||record.status==='error');
- }
- function togglePlayer(){const audio=activeAudio?.audio;if(!audio)return;if(audio.paused)audio.play().catch(()=>{});else audio.pause()}
- function seekFromEvent(e){
-  const audio=activeAudio?.audio;if(!audio||!audio.duration)return;
-  const disc=$('.audio-disc'),rect=disc.getBoundingClientRect();
-  const cx=rect.left+rect.width/2,cy=rect.top+rect.height/2;
-  const deg=(Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI+90+360)%360;
-  audio.currentTime=deg/360*audio.duration;
-  updateAudioPlayer();
- }
  function paintPage(){
   for(const b of root.querySelectorAll('[data-info-tab]')){const selected=b.dataset.infoTab===tab;b.classList.toggle('selected',selected);b.setAttribute('aria-selected',String(selected))}
   $('.info-filter').hidden=tab!=='media';const state=pages.get(pageKey()),list=$('.info-list'),key=pageKey()+':'+(state?.mediaPeer||'');list.classList.toggle('info-gallery',tab==='media');
-  if(renderedKey!==key){list.querySelectorAll('video,audio').forEach(el=>el.pause());release(list);list.replaceChildren();records=new Map();renderedKey=key}
+  if(renderedKey!==key){list.querySelectorAll('video,audio').forEach(el=>el.pause());list.querySelectorAll('.audio-track').forEach(row=>row.disposeMedia?.());release(list);list.replaceChildren();records=new Map();renderedKey=key}
   const next=new Map(),nodes=[];
   for(const item of state?.items||[]){
    const signature=JSON.stringify(item),old=records.get(item.id);if(old?.signature===signature){next.set(item.id,old);nodes.push(old.node);continue}
@@ -153,21 +101,18 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,onOpenI
     const version=generation,id=current.id;node=galleryTile(item,state.mediaPeer,()=>valid(version,id));
    }else if(tab==='saved'){
     if(item.media?.kind==='image'||item.media?.kind==='video'){const version=generation,id=current.id;node=galleryTile(item,state.mediaPeer,()=>valid(version,id))}
+    else if(item.media?.kind==='audio'){node=createAudioRow(item,state.mediaPeer,{player,coverLoader,doc:root.ownerDocument});node.classList.add('info-round-item')}
     else{const card=document.createElement('div');card.className='info-saved-text';card.append(richText(item.text||'',item.entities));node=card}
+   }else if(item.media?.kind==='audio'){
+    node=createAudioRow(item,state.mediaPeer,{player,coverLoader,doc:root.ownerDocument});node.classList.add('info-round-item');
    }else{
-    const isAudio=item.media?.kind==='audio';
     const row=document.createElement('button');row.className='info-attachment info-round-item';
     const icon=document.createElement('span');icon.className='info-attachment-icon';icon.textContent=ITEM_ICONS[tab]||'☆';icon.setAttribute('aria-hidden','true');
-    if(isAudio){
-     audioIconRefs.set(item.id,{icon});
-     if(item.media?.cover)coverLoader(item,state.mediaPeer).then(url=>{if(url&&icon.isConnected){const img=document.createElement('img');img.alt='';img.src=url;icon.replaceChildren(img)}}).catch(()=>{});
-     if(activeAudio?.item.id===item.id)applyAudioIcon(icon,activeAudio.status);
-    }else audioIconRefs.delete(item.id);
-    const labels=document.createElement('span');labels.className='info-attachment-label';const label=attachmentLabel(item),title=document.createElement('strong'),detail=document.createElement('small');title.textContent=label.title;detail.textContent=label.detail;labels.append(title,detail);row.append(icon,labels);row.onclick=()=>isAudio?toggleAudio(item,state.mediaPeer):onOpenItem(item,state.mediaPeer);node=row;
+    const labels=document.createElement('span');labels.className='info-attachment-label';const label=attachmentLabel(item),title=document.createElement('strong'),detail=document.createElement('small');title.textContent=label.title;detail.textContent=label.detail;labels.append(title,detail);row.append(icon,labels);row.onclick=()=>onOpenItem(item,state.mediaPeer);node=row;
    }
    next.set(item.id,{signature,node});nodes.push(node);
   }
-  for(const [id,record]of records)if(next.get(id)?.node!==record.node){record.node.querySelectorAll('video,audio').forEach(el=>el.pause());release(record.node)}
+  for(const [id,record]of records)if(next.get(id)?.node!==record.node){record.node.disposeMedia?.();record.node.querySelectorAll('video,audio').forEach(el=>el.pause());release(record.node)}
   if(tab==='media'){
    list.style.setProperty('--info-columns',columns);
    const rows=[];for(let i=0;i<nodes.length;i+=columns){const row=list.children[Math.floor(i/columns)]||document.createElement('div');row.className='info-grid-row info-round-item';reconcileChildren(row,nodes.slice(i,i+columns));rows.push(row)}reconcileChildren(list,rows);
@@ -193,8 +138,8 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,onOpenI
  }
  async function open(dialog,initialTab){
   round?.destroy();round=null;stop();records=new Map();renderedKey='';owner=scope();cacheEpoch=cacheVersion();const version=++generation,id=dialog.id;current=dialog;pages=new Map();tab=initialTab||(dialog.group||dialog.channel?'members':'media');filter='visual';root.hidden=false;document.body.classList.add('info-open');
-  root.innerHTML='<div class="info-toolbar"><button class="icon info-back" aria-label="返回聊天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button><span>会话信息</span></div><div class="info-hero"><div class="info-backdrop" aria-hidden="true"></div><div class="info-avatar avatar"></div></div><h2 class="info-name"></h2><p class="info-status"></p><div class="info-link" hidden></div><div class="info-tabs" role="tablist" aria-label="会话内容">'+INFO_TABS.map(([key,label])=>'<button role="tab" data-info-tab="'+key+'">'+label+'</button>').join('')+'</div><div class="info-filter" hidden><span>类型</span><button type="button" class="info-filter-trigger" aria-haspopup="listbox" aria-expanded="false"><span class="info-filter-value">全部</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="info-filter-menu" role="listbox" hidden><button type="button" role="option" data-filter="visual" class="selected">全部</button><button type="button" role="option" data-filter="photo">图片</button><button type="button" role="option" data-filter="video">视频</button></div></div><div class="info-list"></div><p class="info-load-status" role="status"></p><button class="info-more">加载更多</button><div class="audio-overlay" hidden><div class="audio-disc"><div class="audio-disc-cover"></div><div class="audio-disc-state paused"><span class="state-play"></span><span class="state-pause"></span><span class="state-spin"></span></div><svg class="audio-ring" viewBox="0 0 200 200" aria-hidden="true"><circle class="audio-ring-bg" cx="100" cy="100" r="90"></circle><circle class="audio-ring-fg" cx="100" cy="100" r="90"></circle></svg></div><strong class="audio-title"></strong><span class="audio-artist"></span><span class="audio-time"></span><button class="audio-overlay-close" aria-label="收起">×</button></div>';
-  $('.info-back').onclick=onBack;$('.info-more').onclick=()=>loadPage();$('.audio-overlay-close').onclick=closeAudioPlayer;let seeking=false;const disc=$('.audio-disc');disc.addEventListener('pointerdown',e=>{const rect=disc.getBoundingClientRect(),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2;if(Math.hypot(e.clientX-cx,e.clientY-cy)<rect.width*0.31)togglePlayer();else{seeking=true;seekFromEvent(e);disc.setPointerCapture?.(e.pointerId)}});disc.addEventListener('pointermove',e=>{if(seeking)seekFromEvent(e)});disc.addEventListener('pointerup',()=>{seeking=false});disc.addEventListener('pointercancel',()=>{seeking=false});const filterTrigger=$('.info-filter-trigger'),filterMenu=$('.info-filter-menu');filterTrigger.onclick=()=>{const show=filterMenu.hidden;filterMenu.hidden=!show;filterTrigger.setAttribute('aria-expanded',String(!show))};for(const option of filterMenu.querySelectorAll('button'))option.onclick=()=>{filter=option.dataset.filter;$('.info-filter-value').textContent=option.textContent;for(const b of filterMenu.querySelectorAll('button')){const s=b.dataset.filter===filter;b.classList.toggle('selected',s);b.setAttribute('aria-selected',String(s))}filterMenu.hidden=true;filterTrigger.setAttribute('aria-expanded','false');loadPage()};root.addEventListener('scroll',onScroll,{passive:true});if(typeof window!=='undefined')window.addEventListener('scroll',onScroll,{passive:true});lastScrollY=scrollTop();edgeTouch=false;document.addEventListener('pointerdown',onDocPointer);document.addEventListener('touchstart',onTouchStart,{passive:true});document.addEventListener('touchmove',onTouchMove,{passive:true});document.addEventListener('touchend',onTouchEnd,{passive:true});
+  root.innerHTML='<div class="info-toolbar"><button class="icon info-back" aria-label="返回聊天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button><span>会话信息</span></div><div class="info-hero"><div class="info-backdrop" aria-hidden="true"></div><div class="info-avatar avatar"></div></div><h2 class="info-name"></h2><p class="info-status"></p><div class="info-link" hidden></div><div class="info-tabs" role="tablist" aria-label="会话内容">'+INFO_TABS.map(([key,label])=>'<button role="tab" data-info-tab="'+key+'">'+label+'</button>').join('')+'</div><div class="info-filter" hidden><span>类型</span><button type="button" class="info-filter-trigger" aria-haspopup="listbox" aria-expanded="false"><span class="info-filter-value">全部</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="info-filter-menu" role="listbox" hidden><button type="button" role="option" data-filter="visual" class="selected">全部</button><button type="button" role="option" data-filter="photo">图片</button><button type="button" role="option" data-filter="video">视频</button></div></div><div class="info-list"></div><p class="info-load-status" role="status"></p><button class="info-more">加载更多</button>';
+  $('.info-back').onclick=onBack;$('.info-more').onclick=()=>loadPage();const filterTrigger=$('.info-filter-trigger'),filterMenu=$('.info-filter-menu');filterTrigger.onclick=()=>{const show=filterMenu.hidden;filterMenu.hidden=!show;filterTrigger.setAttribute('aria-expanded',String(!show))};for(const option of filterMenu.querySelectorAll('button'))option.onclick=()=>{filter=option.dataset.filter;$('.info-filter-value').textContent=option.textContent;for(const b of filterMenu.querySelectorAll('button')){const s=b.dataset.filter===filter;b.classList.toggle('selected',s);b.setAttribute('aria-selected',String(s))}filterMenu.hidden=true;filterTrigger.setAttribute('aria-expanded','false');loadPage()};root.addEventListener('scroll',onScroll,{passive:true});if(typeof window!=='undefined')window.addEventListener('scroll',onScroll,{passive:true});lastScrollY=scrollTop();edgeTouch=false;document.addEventListener('pointerdown',onDocPointer);document.addEventListener('touchstart',onTouchStart,{passive:true});document.addEventListener('touchmove',onTouchMove,{passive:true});document.addEventListener('touchend',onTouchEnd,{passive:true});
   for(const button of root.querySelectorAll('[data-info-tab]'))button.onclick=()=>{tab=button.dataset.infoTab;loadPage()};
   const savedTab=root.querySelector('[data-info-tab="saved"]');savedTab.hidden=true;
   void (async()=>{try{const result=await telegram.getConversationItems(id,{saved:true,filter:'visual',offsetId:0});if(valid(version,id)&&result.items?.length)savedTab.hidden=false}catch{}})();
@@ -205,5 +150,5 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,onOpenI
   void loadPage({refresh:true});
   try{const profile=await telegram.getConversationProfile(id);if(!valid(version,id))return;paintProfile(profile);if(canCache(version,id))void writeCache('info-profile:'+id+':profile',profile);void fullPhoto(version,id)}catch{if(valid(version,id))text('.info-status','信息同步失败，可返回后重试')}
  }
- return {open,hide,closeAudioPlayer};
+ return {open,hide,closeAudioPlayer:()=>player.close()};
 }
