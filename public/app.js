@@ -1,7 +1,8 @@
+import {compactButtonLabel} from './button-label.js';
 import {installTelegramLinks} from './telegram-links.js';
 import {createAudioPlayer,createAudioRow} from './audio-player.js';
 import { isLoopVideo } from './video-policy.js';
-import { installMediaViewer } from './media-viewer.js';
+import { installMediaViewer,fitVideoPreview } from './media-viewer.js';
 import { installPageGestures } from './page-gestures.js';
 import { formatDownloadPercent } from './media-download.js';
 import { createMediaStream } from './media-stream.js';
@@ -111,7 +112,7 @@ async function loadAudioCover(message,peer){
  }catch{return null}
 }
 const audioPlayer=createAudioPlayer({load:playInfoAudio,coverLoader:loadAudioCover});
-const infoPage=createConversationInfo({audioPlayer,root:$('#conversationInfo'),telegram,avatar,galleryTile:infoGalleryTile,onOpenItem:openInfoItem,onPlayAudio:playInfoAudio,coverLoader:loadAudioCover,readCache:snapshotGet,writeCache:snapshotPut,watch:watchDocumentScroll,cacheVersion:cacheGeneration,scope:()=>telegram.settings().owner||telegram.cacheScope(),release:root=>{if(root.matches('.info-media-tile'))visibleResources.unobserve(root);for(const el of root.querySelectorAll('.avatar,.auto-image,.video-card,.sticker,.info-media-tile')){visibleResources.unobserve(el);const animation=stickerAnimations.get(el);if(animation){animation.destroy();stickerAnimations.delete(el)}}},onBack:()=>nav.goBack(),onMember:item=>openPeerProfile(item.id)});
+const infoPage=createConversationInfo({audioPlayer,root:$('#conversationInfo'),telegram,avatar,galleryTile:infoGalleryTile,onOpenItem:openInfoItem,onLocate:(item,peer)=>openTelegramRoute({kind:'message',reference:item.sourcePeer||peer,messageId:item.sourceMessageId||item.id,topic:item.sourcePeer?0:item.topicId||0}),onLocateError:error=>toast(error.errorMessage||error.message),onPlayAudio:playInfoAudio,coverLoader:loadAudioCover,readCache:snapshotGet,writeCache:snapshotPut,watch:watchDocumentScroll,cacheVersion:cacheGeneration,scope:()=>telegram.settings().owner||telegram.cacheScope(),release:root=>{if(root.matches('.info-media-tile'))visibleResources.unobserve(root);for(const el of root.querySelectorAll('.avatar,.auto-image,.video-card,.sticker,.info-media-tile')){visibleResources.unobserve(el);const animation=stickerAnimations.get(el);if(animation){animation.destroy();stickerAnimations.delete(el)}}},onBack:()=>nav.goBack(),onMember:item=>openPeerProfile(item.id)});
 function closeConversationInfo(){const open=document.body.classList.contains('info-open');infoPage.hide();if(open)messageScroller().scrollTop=infoChatScroll}
 function openConversationInfo(record=true,tab){const dialog=dialogs.find(d=>d.id===active);if(!dialog)return;if(!document.body.classList.contains('info-open'))infoChatScroll=messageScroller().scrollTop;if(record)nav.push('info');void infoPage.open(dialog,tab);$('#messages').querySelectorAll('video,audio').forEach(el=>el.pause());if(watchDocumentScroll())messageScroller().scrollTop=0}
 function infoGalleryTile(message,peer,alive){
@@ -425,6 +426,7 @@ function applyVisualSettings(){
  document.documentElement.style.setProperty('--bubble-radius',visualSettings.radius+'px');
  document.documentElement.style.setProperty('--ui-scale',visualSettings.scale);
  document.documentElement.style.zoom=visualSettings.scale;
+ for(const card of document.querySelectorAll('.video-card'))card.updatePreviewSize?.();
  refreshFullscreenRounds();
 }
 function openSettings(){
@@ -506,8 +508,8 @@ function mediaCard(m,chat){
  };return card;
 }
 function videoCard(m,chat,preview='',inViewer=false){
- const info=m.media,loop=!inViewer&&isLoopVideo(info),key=chat+':'+(info.key||m.id);const card=document.createElement('div');card.className='video-card'+(info.round?' round-video':'');if(loop)card.classList.add('loop-video');card.dataset.resource=key;card.dataset.width=info.width||(info.round?1:16);card.dataset.height=info.height||(info.round?1:9);
- if(info.width&&info.height&&!info.round){card.style.aspectRatio=info.width+'/'+info.height;card.style.width=Math.min(320,info.width,360*info.width/info.height)+'px'}
+ const info=m.media,loop=!inViewer&&isLoopVideo(info),key=chat+':'+(info.key||m.id);const card=document.createElement('div');card.className='video-card'+(info.round?' round-video':'');if(loop)card.classList.add('loop-video');card.dataset.resource=key;card.dataset.width=info.width||(info.round?200:1280);card.dataset.height=info.height||(info.round?200:720);
+ const sizeVideo=(w,h)=>{if(w>0&&h>0){card.dataset.width=w;card.dataset.height=h;card.style.aspectRatio=w+'/'+h;if(!inViewer){const zoom=visualSettings.scale||1,watch=watchDocumentScroll();const box=fitVideoPreview(w,h,Math.min(info.round?200:320,window.innerWidth/zoom*(watch ? .68 : .82)),Math.min(360,window.innerHeight/zoom*(watch ? .56 : .65)));card.style.width=box.width+'px';card.style.setProperty('--preview-control-size',Math.min(48,box.width*.55,box.height*.65)+'px');card.classList.toggle('video-minimal',box.width<90||box.height<70)}}};card.updatePreviewSize=()=>sizeVideo(Number(card.dataset.width),Number(card.dataset.height));card.updatePreviewSize();
  const poster=document.createElement('img');poster.className='video-poster';poster.alt='';poster.decoding='async';card.append(poster);
  const play=document.createElement('button');play.className='video-play';play.setAttribute('aria-label','播放视频');play.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';card.append(play);
  const expand=document.createElement('button');expand.className='video-expand';expand.setAttribute('aria-label','全屏查看视频');expand.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg>';expand.onclick=()=>{card.querySelector('video')?.pause();openInfoItem(m,chat,posterURL)};card.append(expand);
@@ -515,7 +517,7 @@ function videoCard(m,chat,preview='',inViewer=false){
  if(info.duration){const duration=document.createElement('span');duration.className='video-duration';const n=Math.floor(info.duration);duration.textContent=Math.floor(n/60)+':'+String(n%60).padStart(2,'0');card.append(duration)}
  let posterURL=preview||'',busy=false,stream=null;if(posterURL)poster.src=posterURL;card.disposeMedia=()=>{loopVideos.unobserve(card);stream?.dispose();stream=null};
  card.loadResource=async()=>{try{posterURL=await resources.load('video-thumb:'+key,async()=>{const blob=await cachedBlob('video-thumb:'+key,()=>telegram.downloadMedia(chat,m.id,undefined,true));return blob?resourceURL(blob):null});if(posterURL&&card.isConnected)poster.src=posterURL}catch{ /* No thumbnail: keep the neutral frame and play control. */ }};
- poster.onerror=()=>poster.removeAttribute('src');visibleResources.observe(card);
+ poster.onload=()=>{if(!info.width||!info.height)sizeVideo(poster.naturalWidth,poster.naturalHeight)};poster.onerror=()=>poster.removeAttribute('src');visibleResources.observe(card);
  play.onclick=async()=>{
  if(!inViewer){openInfoItem(m,chat,posterURL);return}
  return startVideo();
@@ -544,7 +546,7 @@ function videoCard(m,chat,preview='',inViewer=false){
  }
  if(!card.isConnected){stream?.dispose();return}
  card.classList.add('video-buffering');const video=document.createElement('video');video.className='inline-video';video.controls=false;video.playsInline=true;video.muted=loop;video.loop=loop;video.preload='auto';if(loop)video.onclick=()=>openInfoItem(m,chat,posterURL);if(posterURL)video.poster=posterURL;
- video.src=url;video.onwaiting=()=>{card.classList.add('video-buffering');status.textContent='缓冲中'};video.onloadeddata=()=>video.classList.add('has-frame');video.onplaying=()=>{card.classList.remove('video-buffering');status.textContent=''};
+ video.onloadedmetadata=()=>sizeVideo(video.videoWidth,video.videoHeight);video.src=url;video.onwaiting=()=>{card.classList.add('video-buffering');status.textContent='缓冲中'};video.onloadeddata=()=>video.classList.add('has-frame');video.onplaying=()=>{card.classList.remove('video-buffering');status.textContent=''};
  video.onerror=()=>{card.classList.remove('video-buffering');status.textContent=video.error?.code===3||video.error?.code===4?'此编码无法播放':'加载失败，请重试';stream?.dispose();stream=null;video.remove();play.hidden=false;const save=document.createElement('button');save.className='video-save';save.textContent='下载视频';save.onclick=async()=>{save.disabled=true;try{if(info.size>100*1024*1024)throw Error('完整下载暂限 100 MiB');const blob=await cachedBlob('media:'+key,()=>telegram.downloadMedia(chat,m.id,n=>status.textContent=formatDownloadPercent(n)));const link=document.createElement('a');link.href=resourceURL(blob);link.download=info.name||'video';link.click()}catch(error){status.textContent=error.message}finally{save.disabled=false}};if(!card.querySelector('.video-save'))card.append(save)};
  card.append(video);play.hidden=true;status.textContent='';
  try{if(!loop||loopAllowed())await video.play()}catch{status.textContent='';play.hidden=false}
@@ -605,8 +607,8 @@ $('#topicSelect').onchange=()=>select(active,Number($('#topicSelect').value));$(
 function messageButtons(m,chat){
  const root=document.createElement('div');root.className='message-buttons';
  for(const row of m.buttons){const line=document.createElement('div');for(const b of row){
- if(b.type==='KeyboardButtonUrl'){const a=document.createElement('a');a.textContent=b.text+' ↗';const url=safeURL(b.url);if(url){a.href=url;a.target='_blank';a.rel='noopener noreferrer'}else a.title='不支持此链接';line.append(a);continue}
- const button=document.createElement('button');button.textContent=b.text;
+ if(b.type==='KeyboardButtonUrl'){const a=document.createElement('a');a.textContent=compactButtonLabel(b.text);a.setAttribute('aria-label',b.text);const url=safeURL(b.url);if(url){a.href=url;a.target='_blank';a.rel='noopener noreferrer'}else a.title='不支持此链接';line.append(a);continue}
+ const button=document.createElement('button');button.textContent=compactButtonLabel(b.text);button.setAttribute('aria-label',b.text);
  button.onclick=async()=>{button.disabled=true;try{
  if(b.type==='KeyboardButtonCopy'){await navigator.clipboard.writeText(b.copy||'');toast('已复制')}
  else if(b.type==='KeyboardButton'){ $('#message').value=b.text;$('#message').focus() }
@@ -811,7 +813,7 @@ $('#confirmConversationAction').onclick=async()=>{
  }catch(e){$('#conversationActionError').textContent=e.errorMessage||e.message}finally{b.disabled=false}
 };
 
-window.addEventListener('resize',()=>{closeMessageMenu();closeConversationMenu()});
+window.addEventListener('resize',()=>{closeMessageMenu();closeConversationMenu();for(const card of document.querySelectorAll('.video-card'))card.updatePreviewSize?.()});
 
 const watchHaptics=installWatchHaptics({enabled:()=>$('#watchHapticsEnabled').checked});
 try{$('#watchHapticsEnabled').checked=localStorage.getItem('watch-haptics')!=='off'}catch{}

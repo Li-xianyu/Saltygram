@@ -17,3 +17,9 @@ test('late high-quality images cannot repaint a removed gallery cell',async()=>{
  const tile=createGalleryTile({media:{kind:'image'}},'peer',{observe(){},onOpen(){},load:async(m,p,q)=>q==='small'?'blob:small':new Promise(r=>high=r)});
  document.body.append(tile);const work=tile.loadResource();await tick();tile.remove();high('blob:late');await work;assert.equal(tile.querySelector('img').src,'blob:small');
 });
+
+test('video duration stays at the corner while thumbnail quality is upgraded',async()=>{
+ const {document}=parseHTML('<html><body></body></html>');globalThis.document=document;
+ const tile=createGalleryTile({id:5,media:{kind:'video',duration:125}},'peer',{observe(){},onOpen(){},load:async(m,p,q)=>'blob:'+q});document.body.append(tile);
+ await tile.loadResource();assert.equal(tile.querySelector('.info-media-duration').textContent,'2:05');assert.equal(tile.querySelector('img').src,'blob:large');assert.equal(tile.children.length,2);
+});

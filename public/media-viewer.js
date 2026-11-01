@@ -1,3 +1,8 @@
+export function fitVideoPreview(width,height,maxWidth=320,maxHeight=360){
+ width=Number(width)>0?Number(width):1280;height=Number(height)>0?Number(height):720;
+ const factor=Math.min(1,maxWidth/width,maxHeight/height);
+ return {width:width*factor,height:height*factor};
+}
 export function fitMedia(width,height,availableWidth,availableHeight,{round=false,zoom=1}={}){
  width=Number(width)>0?Number(width):16;height=Number(height)>0?Number(height):9;
  const factor=round?Math.min(Math.min(availableWidth,availableHeight)*.94/Math.hypot(width,height),availableHeight*.74/height):Math.min(availableWidth*.96/width,availableHeight*.84/height);
@@ -18,6 +23,11 @@ export function installMediaViewer({root,content,win=window,getZoom=()=>1}){
  toolbar.append(zoomButton,seek,playback);root.append(toolbar);
  const status=doc.createElement('div');status.className='viewer-status';status.setAttribute('role','status');root.append(status);
  let image,video,scale=1,x=0,y=0,drag,pinch=0,pinchBase=1;
+ let hideTimer,controlsHeld=false;
+ const reveal=()=>{root.classList.remove('viewer-controls-hidden');win.clearTimeout(hideTimer);if(!controlsHeld&&video&&!video.paused&&!video.ended&&root.open&&!root.classList.contains('viewer-busy')){hideTimer=win.setTimeout(()=>{if(video&&!video.paused&&!video.ended&&root.open)root.classList.add('viewer-controls-hidden')},3000);hideTimer?.unref?.()}};
+ for(const name of ['pointerdown','pointermove','click','keydown','focusin'])root.addEventListener(name,reveal,{passive:true});
+ root.addEventListener('pointerdown',e=>{if(toolbar.contains(e.target)){controlsHeld=true;reveal()}});
+ for(const name of ['pointerup','pointercancel'])root.addEventListener(name,()=>{controlsHeld=false;reveal()});
  const round=()=>win.innerWidth<=480&&win.innerHeight<=540;
  const format=value=>{const n=Math.max(0,Math.floor(Number(value)||0));return Math.floor(n/60)+':'+String(n%60).padStart(2,'0')};
  const transform=()=>{
@@ -51,7 +61,7 @@ export function installMediaViewer({root,content,win=window,getZoom=()=>1}){
   const nextImage=content.querySelector('img:not(.video-poster)'),nextVideo=content.querySelector('video');
   if(nextImage!==image){image=nextImage;reset();status.textContent='';root.classList.toggle('viewer-busy',!!image&&!image.complete)}
   const changedVideo=video!==nextVideo;video=nextVideo;if(video)video.controls=false;
-  if(changedVideo)root.classList.toggle('viewer-busy',!!video&&video.readyState<3);
+  if(changedVideo){root.classList.toggle('viewer-busy',!!video&&video.readyState<3);reveal()}
   const isVideo=!!content.querySelector('.video-card');root.classList.toggle('viewer-video',isVideo);root.classList.toggle('viewer-image',!!image&&!isVideo);
   zoomButton.hidden=!image||isVideo;seek.hidden=playback.hidden=!isVideo;
   layout();update();
@@ -60,7 +70,8 @@ export function installMediaViewer({root,content,win=window,getZoom=()=>1}){
  const busy=value=>root.classList.toggle('viewer-busy',value);
  content.addEventListener('load',()=>{busy(false);layout()},true);
  for(const name of ['loadedmetadata','loadeddata','durationchange'])content.addEventListener(name,()=>{sync();if(name==='loadeddata')busy(false)},true);
- content.addEventListener('waiting',()=>busy(true),true);content.addEventListener('playing',()=>{busy(false);status.textContent=''},true);
+ content.addEventListener('waiting',()=>{busy(true);reveal()},true);content.addEventListener('playing',()=>{busy(false);status.textContent='';reveal()},true);
+ for(const name of ['pause','ended'])content.addEventListener(name,reveal,true);
  for(const name of ['timeupdate','play','pause','ended','volumechange'])content.addEventListener(name,update,true);
  content.addEventListener('error',()=>{busy(false);status.textContent='加载失败，可关闭后重试'},true);
  content.addEventListener('dblclick',e=>{if(e.target===image){e.preventDefault();toggleZoom()}});
@@ -78,7 +89,7 @@ export function installMediaViewer({root,content,win=window,getZoom=()=>1}){
   else if(scale>1&&drag&&e.touches.length===1){e.preventDefault();x=drag.baseX+(e.touches[0].clientX-drag.x)/getZoom();y=drag.baseY+(e.touches[0].clientY-drag.y)/getZoom();transform()}
  },{passive:false});
  for(const name of ['touchend','touchcancel'])content.addEventListener(name,()=>{pinch=0;drag=null});
- root.addEventListener('close',()=>{reset();busy(false);status.textContent=''});
+ root.addEventListener('close',()=>{win.clearTimeout(hideTimer);controlsHeld=false;root.classList.remove('viewer-controls-hidden');reset();busy(false);status.textContent=''});
  win.addEventListener('resize',layout);sync();
  return {reset,canSwipe:()=>scale===1};
 }

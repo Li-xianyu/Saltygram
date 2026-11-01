@@ -44,3 +44,22 @@ test('info page loads real tab pages, keeps saved media in self peer and discard
  assert.equal(root.querySelector('.info-name').textContent,'原始资料');assert.equal(cache.has('info-profile:late:profile'),false);
  controller.hide();assert.equal(root.hidden,true);assert.equal(root.children.length,0);
 });
+
+test('all information tabs automatically fetch the next page near the bottom without a prompt',async()=>{
+ const {document,window}=parseHTML('<html><body><section id="info" hidden></section></body></html>');globalThis.document=document;
+ const oldRect=window.HTMLElement.prototype.getBoundingClientRect;
+ window.HTMLElement.prototype.getBoundingClientRect=function(){return {top:this.classList.contains('info-page-sentinel')?350:0,bottom:400,width:300,height:400}};
+ const root=document.querySelector('#info'),calls=[];
+ const page=createConversationInfo({root,watch:()=>false,avatar(){},galleryTile:()=>document.createElement('button'),readCache:async key=>key.includes('media:')?{items:[{id:100,media:{kind:'image'}}],next:1,more:false,mediaPeer:'group'}:null,writeCache:async()=>{},roundList:()=>({refresh(){},destroy(){}}),telegram:{
+  getConversationProfile:async()=>({id:'group',group:true,title:'Group'}),
+  getConversationMembers:async(id,offset)=>{calls.push(['members',offset]);return {items:[{id:'u'+offset,title:'User'}],next:offset+1,more:offset===0}},
+  getConversationItems:async(id,options)=>{const key=options.saved?'saved':options.filter;calls.push([key,options.offsetId]);return {items:[{id:100+options.offsetId,text:'link',media:{kind:key==='visual'?'image':key==='audio'||key==='voice'?'audio':'file',name:'File'}}],mediaPeer:id,next:options.offsetId+1,more:options.offsetId===0}}
+ }});
+ const waitFor=async(key)=>{for(let n=0;n<30&&!calls.some(c=>c[0]===key&&c[1]===1);n++)await new Promise(r=>setTimeout(r,2));assert.ok(calls.some(c=>c[0]===key&&c[1]===1),key+' paginates automatically')};
+ try{
+  await page.open({id:'group',title:'Group',group:true});await waitFor('members');
+  for(const [tab,key]of [['media','visual'],['files','file'],['links','link'],['music','audio'],['voice','voice'],['saved','saved']]){root.querySelector('[data-info-tab="'+tab+'"]').onclick();await waitFor(key);assert.equal(root.querySelector('.info-more').hidden,true)}
+  root.querySelector('[data-info-tab="media"]').onclick();
+  for(const filter of ['photo','video']){root.querySelector('[data-filter="'+filter+'"]').onclick();await waitFor(filter)}
+ }finally{page.hide();window.HTMLElement.prototype.getBoundingClientRect=oldRect}
+});

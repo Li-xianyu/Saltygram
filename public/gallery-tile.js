@@ -3,6 +3,8 @@
 export function createGalleryTile(message,peer,{load,observe,onOpen,alive=()=>true}){
  const tile=document.createElement('button');tile.className='info-media-tile';tile.type='button';
  tile.setAttribute('aria-label',message.media.kind==='video'?'播放视频':'查看图片');
+ const duration=message.media.kind==='video'&&Number(message.media.duration)>0?document.createElement('span'):null;
+ if(duration){duration.className='info-media-duration';const seconds=Math.floor(Number(message.media.duration));duration.textContent=Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');duration.setAttribute('aria-hidden','true');tile.append(duration)}
  let loading;
  tile.loadResource=()=>loading ||= (async()=>{
   for(const quality of ['small','large']){
@@ -13,7 +15,7 @@ export function createGalleryTile(message,peer,{load,observe,onOpen,alive=()=>tr
     const image=document.createElement('img');image.alt='';image.decoding='async';image.src=url;
     if(image.decode)await image.decode();
     if(!tile.isConnected||!alive())return;
-    tile.replaceChildren(image);tile.dataset.quality=quality;
+    const previous=tile.querySelector('img');if(previous)previous.replaceWith(image);else tile.prepend(image);tile.dataset.quality=quality;
    }catch{ /* Keep an existing preview; an empty cell remains a neutral square. */ }
   }
  })().finally(()=>loading=null);

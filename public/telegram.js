@@ -118,11 +118,12 @@ export function mediaInfo(m) {
 function displayName(entity){return [entity?.firstName,entity?.lastName].filter(Boolean).join(' ')||entity?.title||entity?.username||'未知用户'}
 function serialize(m,id){
  rawMessages.set(id+':'+m.id,m);if(m.sender)rememberEntities({users:m.sender.className==='User'?[m.sender]:[],chats:m.sender.className!=='User'?[m.sender]:[]});const entity=entities.get(id);const isPrivate=entity?.className==='User';
+ let sourcePeer='';try{if(m.fwdFrom?.savedFromPeer)sourcePeer=utils.getPeerId(m.fwdFrom.savedFromPeer).toString()}catch{}
  let replyPeer=id;try{if(m.replyTo?.replyToPeerId)replyPeer=utils.getPeerId(m.replyTo.replyToPeerId).toString()}catch{}
  let senderId=m.senderId?.toString()||'';if(!senderId)try{senderId=utils.getPeerId(m.fromId).toString()}catch{}
  if(senderId&&!peers.has(senderId)&&peers.has(id)&&m.sender?.className==='User')peers.set(senderId,new Api.InputPeerUserFromMessage({peer:peers.get(id),msgId:m.id,userId:bigInt(senderId)}));
  const senderName=m.out?'我':displayName(m.sender||entities.get(senderId)||(isPrivate||!senderId?entity:null)),service=serviceMessage(m.action,{actor:senderName,actorId:senderId,nameOf:id=>entities.has(id)?displayName(entities.get(id)):null});
- const media=mediaInfo(m);return {id:m.id,text:service?.text||m.message||'',service,senderId,topicId:m.replyTo?.forumTopic?(m.replyTo.replyToTopId||m.replyTo.replyToMsgId||0):0,out:!!m.out,date:m.date,edited:!!m.editDate,senderName,media,
+ const media=mediaInfo(m);return {id:m.id,text:service?.text||m.message||'',service,senderId,sourcePeer,sourceMessageId:m.fwdFrom?.savedFromMsgId||0,topicId:m.replyTo?.forumTopic?(m.replyTo.replyToTopId||m.replyTo.replyToMsgId||0):0,out:!!m.out,date:m.date,edited:!!m.editDate,senderName,media,
  canEdit:!!(m.out||entity?.adminRights?.editMessages)&&!m.viaBotId&&media?.kind!=='sticker'&&!!(m.message||!media),
  canDelete:!!(m.out||isPrivate||entity?.className==='Chat'||entity?.creator||entity?.adminRights?.deleteMessages),deleteForEveryone:!!(m.out||isPrivate||entity?.creator||entity?.adminRights?.deleteMessages),private:isPrivate,channel:entity?.className==='Channel',
  replyId:m.replyTo?.forumTopic&&(!m.replyTo.replyToTopId||m.replyTo.replyToTopId===m.replyTo.replyToMsgId)?0:m.replyTo?.replyToMsgId||0,replyPeer,quote:m.replyTo?.quoteText||'',
@@ -342,7 +343,10 @@ export async function getConversationItems(id,{saved=false,filter='visual',offse
  if(c!==client)throw Error('账号已切换');rememberEntities(result);const mediaPeer=saved?memory.owner:id;
  const raw=(result.messages||[]).filter(m=>m.className!=='MessageEmpty');
  const messages=raw.map(m=>serialize(m,mediaPeer));
- return {items:messages,mediaPeer,next:raw.at(-1)?.id||0,more:raw.length===limit};
+ // Search may return a partial page while older matches still exist.
+ // Keep following an advancing cursor until Telegram returns an empty page.
+ const next=raw.at(-1)?.id||0;
+ return {items:messages,mediaPeer,next,more:raw.length>0&&next!==offsetId};
 }
 export async function addContact(id,firstName,lastName=''){
  firstName=String(firstName||'').trim();lastName=String(lastName||'').trim();if(!firstName)throw Error('请填写联系人名字');const info=await getConversationInfo(id);if(!info.canAddContact)throw Error('此会话不支持添加联系人');

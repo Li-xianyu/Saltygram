@@ -1,3 +1,4 @@
+import {installInfoItemMenu} from './info-item-menu.js';
 import {createAudioPlayer,createAudioRow} from './audio-player.js';
 import {safeURL,richText} from './richtext.js';
 import {reconcileChildren} from './dialog-list.js';
@@ -27,15 +28,21 @@ export function conversationStatus(profile){
  return ({UserStatusRecently:'最近在线',UserStatusLastWeek:'一周内在线',UserStatusLastMonth:'一个月内在线'})[status?.type]||'最近上线时间不可见';
 }
 
-export function createConversationInfo({root,telegram,avatar,galleryTile,audioPlayer,onOpenItem=()=>{},onPlayAudio=()=>null,coverLoader=()=>null,readCache,writeCache,watch,onBack,onMember,release=()=>{},scope=()=>null,cacheVersion=()=>0,roundList=installRoundList}){
+export function createConversationInfo({root,telegram,avatar,galleryTile,audioPlayer,onOpenItem=()=>{},onLocate=()=>{},onLocateError=()=>{},onPlayAudio=()=>null,coverLoader=()=>null,readCache,writeCache,watch,onBack,onMember,release=()=>{},scope=()=>null,cacheVersion=()=>0,roundList=installRoundList}){
  let generation=0,current,tab='members',filter='visual',pages=new Map(),photoURL,owner,cacheEpoch,renderedKey='',records=new Map(),round,columns=3;
  const player=audioPlayer||createAudioPlayer({doc:root.ownerDocument,load:onPlayAudio,coverLoader});
  const $=selector=>root.querySelector(selector);
+ const itemMenu=installInfoItemMenu(root,{onLocate,onError:onLocateError});
+ const win=root.ownerDocument.defaultView;let pageObserver,autoQueued=false;
+ function queueAutoLoad(){if(autoQueued||root.hidden||!root.getBoundingClientRect)return;autoQueued=true;(win.requestAnimationFrame?fn=>win.requestAnimationFrame(fn):fn=>win.setTimeout(fn,0))(()=>{autoQueued=false;autoLoad()})}
+ function autoLoad(){const state=pages.get(pageKey()),sentinel=$('.info-page-sentinel');if(root.hidden||document.hidden||document.querySelector('dialog[open]')||!state?.more||state.busy||state.error||!sentinel?.getBoundingClientRect)return;const bottom=watch()?win.innerHeight:root.getBoundingClientRect().bottom;if(sentinel.getBoundingClientRect().top<=bottom+180)void loadPage()}
+ root.ownerDocument.addEventListener('close',queueAutoLoad,true);root.ownerDocument.addEventListener('visibilitychange',queueAutoLoad);
+
  const valid=(version,id)=>version===generation&&current?.id===id&&!root.hidden&&scope()===owner;
  const canCache=(version,id)=>valid(version,id)&&cacheVersion()===cacheEpoch;
  const text=(selector,value)=>{$(selector).textContent=value};
  function stop(){root.querySelectorAll('.audio-track').forEach(row=>row.disposeMedia?.());root.querySelectorAll('video,audio').forEach(el=>el.pause());release(root);if(photoURL){URL.revokeObjectURL(photoURL);photoURL=null}}
- function hide(){generation++;round?.destroy();round=null;stop();root.hidden=true;document.body.classList.remove('info-open');if(typeof window!=='undefined')window.removeEventListener('scroll',onScroll);root.removeEventListener('scroll',onScroll);document.removeEventListener('pointerdown',onDocPointer);document.removeEventListener('touchstart',onTouchStart);document.removeEventListener('touchmove',onTouchMove);document.removeEventListener('touchend',onTouchEnd);root.replaceChildren();records.clear();pages.clear();renderedKey=''}
+ function hide(){itemMenu.reset();pageObserver?.disconnect();generation++;round?.destroy();round=null;stop();root.hidden=true;document.body.classList.remove('info-open');if(typeof window!=='undefined')window.removeEventListener('scroll',onScroll);root.removeEventListener('scroll',onScroll);document.removeEventListener('pointerdown',onDocPointer);document.removeEventListener('touchstart',onTouchStart);document.removeEventListener('touchmove',onTouchMove);document.removeEventListener('touchend',onTouchEnd);root.replaceChildren();records.clear();pages.clear();renderedKey=''}
  let lastScrollY=0,edgeTouch=false;
  const scrollTop=()=>watch()?(document.scrollingElement||document.documentElement).scrollTop:root.scrollTop;
  function touchEdge(e){
@@ -47,6 +54,7 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,audioPl
  function onTouchMove(e){if(edgeTouch&&!touchEdge(e))edgeTouch=false}
  function onTouchEnd(){edgeTouch=false}
  function onScroll(){
+  queueAutoLoad();
   if(tab!=='media'||root.hidden||!watch())return;
   const y=scrollTop();
   const delta=Math.round(y-lastScrollY);
@@ -110,6 +118,7 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,audioPl
     const icon=document.createElement('span');icon.className='info-attachment-icon';icon.textContent=ITEM_ICONS[tab]||'☆';icon.setAttribute('aria-hidden','true');
     const labels=document.createElement('span');labels.className='info-attachment-label';const label=attachmentLabel(item),title=document.createElement('strong'),detail=document.createElement('small');title.textContent=label.title;detail.textContent=label.detail;labels.append(title,detail);row.append(icon,labels);row.onclick=()=>onOpenItem(item,state.mediaPeer);node=row;
    }
+   if(tab!=='members'){node.dataset.infoMessage=String(item.id);node.infoMessage=item;node.infoPeer=state.mediaPeer||current.id}
    next.set(item.id,{signature,node});nodes.push(node);
   }
   for(const [id,record]of records)if(next.get(id)?.node!==record.node){record.node.disposeMedia?.();record.node.querySelectorAll('video,audio').forEach(el=>el.pause());release(record.node)}
@@ -118,8 +127,8 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,audioPl
    const rows=[];for(let i=0;i<nodes.length;i+=columns){const row=list.children[Math.floor(i/columns)]||document.createElement('div');row.className='info-grid-row info-round-item';reconcileChildren(row,nodes.slice(i,i+columns));rows.push(row)}reconcileChildren(list,rows);
   }else reconcileChildren(list,nodes);
   records=next;round?.refresh();
-  const message=$('.info-load-status');message.textContent=state?.error||(!state?.items.length?(state?.busy?'正在加载…':tab==='members'?'暂无可见成员':tab==='saved'?'收藏夹中暂无来自此会话的内容':'暂无相关媒体'):'');
-  const more=$('.info-more');more.hidden=!!state&&!state.more&&!state.error;more.disabled=!!state?.busy;more.textContent=state?.busy?'加载中…':state?.error?'重试':'加载更多';
+  const message=$('.info-load-status');message.textContent=state?.error||(state?.busy&&state?.items.length?'正在加载…':!state?.items.length?(state?.busy?'正在加载…':tab==='members'?'暂无可见成员':tab==='saved'?'收藏夹中暂无来自此会话的内容':'暂无相关媒体'):'');
+  const more=$('.info-more');more.hidden=!state?.error;more.disabled=!!state?.busy;more.textContent='重试加载';queueAutoLoad();
  }
  async function loadPage({refresh=false}={}){
   const key=pageKey(),id=current.id,version=generation,selectedTab=tab,selectedFilter=filter;
@@ -131,14 +140,15 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,audioPl
    const offset=refresh||first?0:state.next;
    const result=selectedTab==='members'?await telegram.getConversationMembers(id,offset):await telegram.getConversationItems(id,{saved:selectedTab==='saved',filter:selectedTab==='media'?selectedFilter:ITEM_FILTERS[selectedTab]||'visual',offsetId:offset});
    if(!valid(version,id))return;
-   const items=refresh||first?[]:state.items,seen=new Set(items.map(i=>i.id));state.items=[...items,...result.items.filter(i=>!seen.has(i.id))];state.next=result.next;state.more=result.more;state.mediaPeer=result.mediaPeer;
+   const items=refresh||first?[]:state.items,seen=new Set(items.map(i=>i.id));state.items=[...items,...result.items.filter(i=>!seen.has(i.id))];state.more=!!result.more&&result.next!==offset;state.next=result.next;state.mediaPeer=result.mediaPeer;
    if(canCache(version,id))void writeCache('info-list:'+id+':'+key,{items:state.items,next:state.next,more:state.more,mediaPeer:state.mediaPeer});
   }catch(error){if(valid(version,id))state.error=/CHAT_ADMIN_REQUIRED|CHANNEL_PRIVATE|PARTICIPANTS/.test(error.errorMessage||error.message)?selectedTab==='members'?'当前账号无权查看成员':'当前账号无权查看此内容':error.errorMessage||error.message}
   finally{state.busy=false;if(valid(version,id)&&pageKey()===key)paintPage()}
  }
  async function open(dialog,initialTab){
-  round?.destroy();round=null;stop();records=new Map();renderedKey='';owner=scope();cacheEpoch=cacheVersion();const version=++generation,id=dialog.id;current=dialog;pages=new Map();tab=initialTab||(dialog.group||dialog.channel?'members':'media');filter='visual';root.hidden=false;document.body.classList.add('info-open');
-  root.innerHTML='<div class="info-toolbar"><button class="icon info-back" aria-label="返回聊天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button><span>会话信息</span></div><div class="info-hero"><div class="info-backdrop" aria-hidden="true"></div><div class="info-avatar avatar"></div></div><h2 class="info-name"></h2><p class="info-status"></p><div class="info-link" hidden></div><div class="info-tabs" role="tablist" aria-label="会话内容">'+INFO_TABS.map(([key,label])=>'<button role="tab" data-info-tab="'+key+'">'+label+'</button>').join('')+'</div><div class="info-filter" hidden><span>类型</span><button type="button" class="info-filter-trigger" aria-haspopup="listbox" aria-expanded="false"><span class="info-filter-value">全部</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="info-filter-menu" role="listbox" hidden><button type="button" role="option" data-filter="visual" class="selected">全部</button><button type="button" role="option" data-filter="photo">图片</button><button type="button" role="option" data-filter="video">视频</button></div></div><div class="info-list"></div><p class="info-load-status" role="status"></p><button class="info-more">加载更多</button>';
+  itemMenu.reset();pageObserver?.disconnect();round?.destroy();round=null;stop();records=new Map();renderedKey='';owner=scope();cacheEpoch=cacheVersion();const version=++generation,id=dialog.id;current=dialog;pages=new Map();tab=initialTab||(dialog.group||dialog.channel?'members':'media');filter='visual';root.hidden=false;document.body.classList.add('info-open');
+  root.innerHTML='<div class="info-toolbar"><button class="icon info-back" aria-label="返回聊天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button><span>会话信息</span></div><div class="info-hero"><div class="info-backdrop" aria-hidden="true"></div><div class="info-avatar avatar"></div></div><h2 class="info-name"></h2><p class="info-status"></p><div class="info-link" hidden></div><div class="info-tabs" role="tablist" aria-label="会话内容">'+INFO_TABS.map(([key,label])=>'<button role="tab" data-info-tab="'+key+'">'+label+'</button>').join('')+'</div><div class="info-filter" hidden><span>类型</span><button type="button" class="info-filter-trigger" aria-haspopup="listbox" aria-expanded="false"><span class="info-filter-value">全部</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="info-filter-menu" role="listbox" hidden><button type="button" role="option" data-filter="visual" class="selected">全部</button><button type="button" role="option" data-filter="photo">图片</button><button type="button" role="option" data-filter="video">视频</button></div></div><div class="info-list"></div><p class="info-load-status" role="status"></p><div class="info-page-sentinel" aria-hidden="true"></div><button class="info-more" hidden>重试加载</button>';
+  if(win.IntersectionObserver){pageObserver=new win.IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))autoLoad()},{root:watch()?null:root,rootMargin:'180px'});pageObserver.observe($('.info-page-sentinel'))}
   $('.info-back').onclick=onBack;$('.info-more').onclick=()=>loadPage();const filterTrigger=$('.info-filter-trigger'),filterMenu=$('.info-filter-menu');filterTrigger.onclick=()=>{const show=filterMenu.hidden;filterMenu.hidden=!show;filterTrigger.setAttribute('aria-expanded',String(!show))};for(const option of filterMenu.querySelectorAll('button'))option.onclick=()=>{filter=option.dataset.filter;$('.info-filter-value').textContent=option.textContent;for(const b of filterMenu.querySelectorAll('button')){const s=b.dataset.filter===filter;b.classList.toggle('selected',s);b.setAttribute('aria-selected',String(s))}filterMenu.hidden=true;filterTrigger.setAttribute('aria-expanded','false');loadPage()};root.addEventListener('scroll',onScroll,{passive:true});if(typeof window!=='undefined')window.addEventListener('scroll',onScroll,{passive:true});lastScrollY=scrollTop();edgeTouch=false;document.addEventListener('pointerdown',onDocPointer);document.addEventListener('touchstart',onTouchStart,{passive:true});document.addEventListener('touchmove',onTouchMove,{passive:true});document.addEventListener('touchend',onTouchEnd,{passive:true});
   for(const button of root.querySelectorAll('[data-info-tab]'))button.onclick=()=>{tab=button.dataset.infoTab;loadPage()};
   const savedTab=root.querySelector('[data-info-tab="saved"]');savedTab.hidden=true;

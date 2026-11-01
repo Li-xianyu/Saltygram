@@ -49,7 +49,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  `;
  let app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
  app=app.replace("'./telegram.js'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(adapter).toString('base64')));
- for(const file of ['telegram-links.js','service-message.js','audio-player.js','video-policy.js','media-viewer.js','page-gestures.js','swipe-close.js','cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
+ for(const file of ['button-label.js','telegram-links.js','service-message.js','audio-player.js','video-policy.js','media-viewer.js','page-gestures.js','swipe-close.js','cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
  app=app.replace("'pako'",JSON.stringify(import.meta.resolve('pako')));
  app=app.replace("'qrcode'",JSON.stringify(import.meta.resolve('qrcode')));
  try{
@@ -95,7 +95,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   assert.ok(parseInt(document.querySelector('#messageMenu').style.left)<990);
   assert.ok(parseInt(document.querySelector('#messageMenu').style.top)<790);
   assert.equal(document.querySelector('#messages .message-text a').getAttribute('href'),'https://example.com/');
-  assert.equal(document.querySelector('#messages .message-buttons a').textContent,'官网 ↗');
+  assert.equal(document.querySelector('#messages .message-buttons a').textContent,'官网');
   assert.equal(document.querySelector('#messages .message-buttons button').textContent,'刷新');
   assert.ok(document.querySelector('#messages .auto-image img').getAttribute('src')?.startsWith('blob:'),document.querySelector('#messages .auto-image').outerHTML);
   assert.ok(!document.querySelector('#messages').textContent.includes('不要显示.webp'));

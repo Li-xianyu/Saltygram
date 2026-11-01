@@ -78,5 +78,7 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  const saved=await api.getConversationItems('-1008',{saved:true,offsetId:900});assert.equal(saved.mediaPeer,'1');assert.equal(saved.items[0].id,800);const savedReq=globalThis.adapterCalls.find(c=>c.method==='messages.GetSavedHistory').req;assert.equal(savedReq.offsetId,900);assert.ok(!('saved' in savedReq));
  await api.getConversationItems('2',{filter:'link',offsetId:100});const search=globalThis.adapterCalls.find(c=>c.method==='messages.Search').req;assert.equal(search.filter.className,'InputMessagesFilterUrl');assert.equal(search.offsetId,100);
  await api.getConversationItems('2',{filter:'photo'});assert.equal(globalThis.adapterCalls.filter(c=>c.method==='messages.Search').at(-1).req.filter.className,'InputMessagesFilterPhotos');
- await api.getConversationItems('2',{filter:'video'});assert.equal(globalThis.adapterCalls.filter(c=>c.method==='messages.Search').at(-1).req.filter.className,'InputMessagesFilterVideo');
+ const videoPage=await api.getConversationItems('2',{filter:'video'});assert.equal(globalThis.adapterCalls.filter(c=>c.method==='messages.Search').at(-1).req.filter.className,'InputMessagesFilterVideo');
+ assert.equal(videoPage.more,true,'partial search pages must not end pagination');
+ assert.equal((await api.getConversationItems('2',{filter:'video',offsetId:800})).more,false,'repeated cursors terminate pagination');
 });
