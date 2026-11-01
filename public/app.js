@@ -1,3 +1,4 @@
+import {createChatMembership} from './chat-membership.js';
 import {compactButtonLabel} from './button-label.js';
 import {createProfileStories} from './profile-stories.js';
 import {installTelegramLinks} from './telegram-links.js';
@@ -181,7 +182,7 @@ function renderMessages(mode='preserve'){
 function updateHistoryControl(){const p=paging();$('#loadOlder').disabled=p.busy;$('#loadOlder').textContent=p.busy?'加载中':p.more?'加载更早消息':'已到最早';$('#loadOlder').hidden=!active;$('#returnLatest').hidden=!p.around}
 async function select(id,topic=0){
  if(document.body.classList.contains('info-open'))nav.goBack();
- const d=dialogs.find(d=>d.id===id);if(!d)return;if(!document.body.classList.contains('chat-open'))routeScrolls[sidebarRoute()]=watchDocumentScroll()?messageScroller().scrollTop:($('#'+(sidebarRoute()==='contacts'?'contactsView':sidebarRoute()==='me'?'meView':'dialogs')).scrollTop||0);const changing=id!==active;readCandidate=0;clearTimeout(readTimer);if(composeContext?.edit)$('#message').value='';active=id;activeTopic=topic;const key=threadKey(),version=++generation;clearCompose();closeMessageMenu();closeConversationMenu();
+ const d=dialogs.find(d=>d.id===id);if(!d)return;if(!document.body.classList.contains('chat-open'))routeScrolls[sidebarRoute()]=watchDocumentScroll()?messageScroller().scrollTop:($('#'+(sidebarRoute()==='contacts'?'contactsView':sidebarRoute()==='me'?'meView':'dialogs')).scrollTop||0);const changing=id!==active;readCandidate=0;clearTimeout(readTimer);if(composeContext?.edit)$('#message').value='';active=id;activeTopic=topic;const key=threadKey(),version=++generation;clearCompose();chatMembership.update(d);void telegram.getConversationInfo(id).then(info=>{if(version===generation&&active===id){Object.assign(d,info);chatMembership.update(d)}}).catch(()=>{});closeMessageMenu();closeConversationMenu();
  document.body.classList.remove('home-open');if(!document.body.classList.contains('chat-open'))nav.push();document.body.classList.add('chat-open','has-chat');$('#emptyState').hidden=true;$('#chatTitle').textContent=d.title;avatar($('#chatAvatar'),d);$('#chatStatus').textContent=d.group?'群组':d.channel?'频道':conversationStatus(d);if(d.group)telegram.getOnlineCount?.(id)?.then(n=>{if(active===id&&n!==undefined)$('#chatStatus').textContent=n+' 人在线'}).catch(()=>{});renderDialogs();
  $('#topicsWrap').hidden=!d.forum;if(d.forum&&changing)loadTopics(id);if(d.forum)$('#topicSelect').value=String(topic);
  if(d.unreadMark)telegram.markConversationUnread(id,false).then(()=>{d.unreadMark=false;snapshotPut('dialogs',dialogs);renderDialogs()}).catch(()=>{});
@@ -229,9 +230,11 @@ $('#emoji').onclick=()=>{$('#message').value+=' 😊';$('#message').focus()};
 $('#details').onclick=()=>$('#conversationMenu').hidden?openConversationMenu():closeConversationMenu();
 $('#chatIdentity').onclick=()=>openConversationInfo();
 $('#message').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$('#composer').requestSubmit()}};
+const chatMembership=createChatMembership({composer:$('#composer'),context:$('#composeContext'),onJoin:id=>telegram.joinConversation(id),alive:()=>!!active,onError:error=>toast(error.errorMessage||error.message),onChange:peer=>{const d=dialogs.find(d=>d.id===peer.id);if(d)Object.assign(d,peer);snapshotPut('dialogs',dialogs);renderDialogs();if(!peer.left)void refreshThread().catch(error=>toast(error.errorMessage||error.message))}});
 let botCommandState=null;
 $('#composer').onsubmit=async e=>{
  e.preventDefault();const input=$('#message'),text=input.value.trim();if(!text||loading||!active)return;const id=active,topic=activeTopic,key=threadKey(),context=composeContext;
+ if(dialogs.find(d=>d.id===id)?.left){toast('请先加入群聊');return}
  if(dialogs.find(d=>d.id===id)?.forum&&!topic&&!context?.edit){toast('请先选择话题再发送');return}
  loading=true;$('.send').disabled=true;
  try{
@@ -328,7 +331,7 @@ function renderMe(){
  hero.append(av,heading,status);root.append(hero);
  const details=document.createElement('dl');details.className='profile-details';
  for(const [label,value]of [['用户名',profile.username?'@'+profile.username:''],['个人简介',profile.about||''],['手机号',profile.phone?'+'+profile.phone.replace(/^\+/, ''):''],['账号 ID',profile.id]]){
-  if(!value)continue;const row=document.createElement('div'),term=document.createElement('dt'),description=document.createElement('dd');term.textContent=label;description.textContent=value;row.append(term,description);details.append(row);
+  if(!value)continue;const row=document.createElement('div'),term=document.createElement('dt'),description=document.createElement('dd');term.textContent=label;if(label==='个人简介'||label==='用户名')description.append(richText(value));else description.textContent=value;row.append(term,description);details.append(row);
  }
  root.append(details);
  const actions=document.createElement('div');actions.className='profile-actions';
@@ -678,7 +681,8 @@ async function openMyStickerSet(set){
 }
 async function sendPickedSticker(m){
  if(!active||loading||!currentPack)return;const id=active,topic=activeTopic,key=threadKey(),context=composeContext;
- if(context?.edit){toast('请先完成或取消编辑');return}if(dialogs.find(d=>d.id===id)?.forum&&!topic){toast('请先选择群话题');return}
+ if(context?.edit){toast('请先完成或取消编辑');return}if(dialogs.find(d=>d.id===id)?.left){toast('请先加入群聊');return}
+ if(dialogs.find(d=>d.id===id)?.forum&&!topic){toast('请先选择群话题');return}
  loading=true;try{const sent=await telegram.sendSticker(id,currentPack.id,m.id,topic,context?.reply?context.message.id:0);changed(key);history[key]=mergePage(history[key]||[],[sent]);saveThread(key);if(threadKey()===key){clearCompose();renderMessages('bottom')}$('#stickerPack').close();$('#myStickersDialog').close();clearStickerGrid()}catch(e){toast(e.errorMessage||e.message)}finally{loading=false}
 }
 async function showStorage(){const s=await cacheStats();$('#cacheUsage').textContent='本地缓存 '+bytes(s.bytes)+' / '+bytes(s.limit);$('#cacheQuota').textContent='浏览器配额 '+(s.quota?bytes(s.quota):'未知')+' · '+s.count+' 项';$('#cachePersistence').textContent=s.persistent?'已获得持久存储保护':'浏览器可能在空间不足时回收缓存'}
@@ -860,12 +864,12 @@ document.addEventListener('visibilitychange',syncLoopVideos);$('#mediaViewer').a
 
 let peerProfileGeneration=0;
 const storiesRoot=document.createElement('section');storiesRoot.id='peerProfileStories';storiesRoot.hidden=true;$('#peerProfile .peer-profile-main').append(storiesRoot);
-const profileStories=createProfileStories({root:storiesRoot,telegram,observe:el=>visibleResources.observe(el),unobserve:el=>visibleResources.unobserve(el),onChange:refreshFullscreenRounds,onOpen:async(item,id)=>{
+const profileStories=createProfileStories({root:storiesRoot,telegram,observe:el=>visibleResources.observe(el),unobserve:el=>visibleResources.unobserve(el),onChange:refreshFullscreenRounds,onOpen:async function openStoryMedia(item,id){
  const content=$('#viewerContent');content.replaceChildren();const viewer=$('#mediaViewer');
  const card=document.createElement('div');card.className=item.media.kind==='video'?'video-card':'story-image';card.dataset.width=item.media.width||720;card.dataset.height=item.media.height||1280;
  const media=document.createElement(item.media.kind==='video'?'video':'img');if(item.media.kind==='video'){media.playsInline=true;media.preload='auto';card.append(media);content.append(card)}else content.append(media);
  viewer.showModal();let objectURL;const cleanup=()=>{if(objectURL)URL.revokeObjectURL(objectURL)};viewer.addEventListener('close',cleanup,{once:true});
- try{const blob=await telegram.downloadStory(id,item.id);if(!viewer.open||!media.isConnected)return;objectURL=URL.createObjectURL(blob);media.src=objectURL;if(item.media.kind==='video')await media.play().catch(()=>{})}catch(error){if(media.isConnected){content.replaceChildren();const hint=document.createElement('p');hint.textContent=error.errorMessage||error.message;content.append(hint)}}
+ try{const blob=await telegram.downloadStory(id,item.id);if(!viewer.open||!media.isConnected)return;objectURL=URL.createObjectURL(blob);media.src=objectURL;if(item.media.kind==='video')await media.play().catch(()=>{})}catch(error){if(media.isConnected){content.replaceChildren();const hint=document.createElement('p');hint.textContent=error.errorMessage||error.message;content.append(hint);const retry=document.createElement('button');retry.className='media-action';retry.textContent='重试';const retryAt=error.retryAt||0;retry.disabled=retryAt>Date.now();const timer=setTimeout(()=>{retry.disabled=false},Math.max(0,retryAt-Date.now()));viewer.addEventListener('close',()=>clearTimeout(timer),{once:true});retry.onclick=()=>{cleanup();void openStoryMedia(item,id)};content.append(retry)}}
 }});
 
 function ensureLinkedDialog(peer){if(!dialogs.some(d=>d.id===peer.id)){dialogs.push({...peer,unread:0,text:''});renderDialogs()}}
@@ -875,7 +879,7 @@ $('#peerProfile').addEventListener('close',()=>{peerProfileGeneration++;profileS
 function paintPeerProfile(peer){
  $('#peerProfileHeading').textContent=peer.user?'个人资料':'会话资料';$('#peerProfileName').textContent=peer.title||'个人资料';$('#peerProfileStatus').textContent=conversationStatus(peer);const photo=$('#peerProfileAvatar');if(photo.dataset.avatarIdentity!==peer.id+':'+(peer.avatarKey||''))avatar(photo,peer);
  const username=$('#peerProfileUsername');username.hidden=!peer.username;username.textContent=peer.username?'@'+peer.username:'';if(peer.username)username.href='https://t.me/'+encodeURIComponent(peer.username);
- const about=$('#peerProfileAbout');about.hidden=!peer.about;about.textContent=peer.about||'';
+ const about=$('#peerProfileAbout');about.hidden=!peer.about;about.replaceChildren(richText(peer.about||''));
  const action=$('#peerProfileChat');action.disabled=false;action.textContent=peer.user?'发消息':'打开会话';action.onclick=async()=>{closePeerProfile();ensureLinkedDialog(peer);await select(peer.id)};
  refreshFullscreenRounds();
 }

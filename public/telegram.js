@@ -1,4 +1,5 @@
 import {serviceMessage} from './service-message.js';
+import {createStoryRequests} from './story-requests.js';
 import { progressRatio, downloadInParts, createTaskPool } from './media-download.js';
 import { NewMessage } from 'telegram/events/NewMessage.js';
 import { EditedMessage } from 'telegram/events/EditedMessage.js';
@@ -20,6 +21,9 @@ let client, connection, phone, phoneCodeHash;
 const peers = new Map();
 const entities = new Map();
 const rawMessages = new Map();
+const storyRequests=new WeakMap();
+const joinRequests=new WeakMap();
+function storiesFor(c){if(!storyRequests.has(c))storyRequests.set(c,createStoryRequests());return storyRequests.get(c)}
 function loadAccounts(){ try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } }
 function persistAccounts(list){ localStorage.setItem(KEY, JSON.stringify(list)); }
 let memory = (()=>{ try{ const active=localStorage.getItem(ACTIVE); return loadAccounts().find(a=>a.owner===active) || {}; }catch{ return {}; } })();
@@ -301,6 +305,7 @@ function installRealtime(source){
 export async function getConversationInfo(id){
  await readyPeer(id);const e=entities.get(id);if(!e)throw Error('无法获取会话信息，请刷新后重试');const user=e.className==='User',group=e.className==='Chat'||!!e.megagroup,saved=id===memory.owner||!!e.self;
  return {id,title:displayName(e),firstName:e.firstName||'',lastName:e.lastName||'',username:e.username||'',contact:!!e.contact,user,bot:!!e.bot,saved,group,channel:e.className==='Channel',broadcast:!!e.broadcast,forum:!!e.forum,
+ left:!!e.left,canJoin:e.className==='Channel'&&!!e.left&&!e.kicked,requestNeeded:!!e.joinRequest,joinPending:!!e.left&&!!joinRequests.get(client)?.has(id),
  canAddContact:user&&!e.bot&&!saved&&!e.deleted,canClear:user||e.className==='Chat'||!!e.megagroup,canDelete:user&&!saved,canLeave:(e.className==='Chat'||e.className==='Channel')&&!e.creator};
 }
 function rememberEntities(result){
@@ -331,8 +336,9 @@ export async function getBotCommands(id){
 }
 export async function getProfileStories(id,{offsetId=0,limit=24}={}){
  const {c,peer}=await readyPeer(id);
- const requests=[c.invoke(new Api.stories.GetPinnedStories({peer,offsetId,limit}))];
- if(!offsetId)requests.push(c.invoke(new Api.stories.GetPeerStories({peer})));
+ const store=storiesFor(c);
+ const requests=[store.run('pinned:'+id+':'+offsetId,()=>c.invoke(new Api.stories.GetPinnedStories({peer,offsetId,limit})),15000)];
+ if(!offsetId)requests.push(store.run('active:'+id,()=>c.invoke(new Api.stories.GetPeerStories({peer})),15000));
  const results=await Promise.allSettled(requests);
  if(c!==client)throw Error('账号已切换');
  if(results.every(r=>r.status==='rejected'))throw results[0].reason;
@@ -341,6 +347,7 @@ export async function getProfileStories(id,{offsetId=0,limit=24}={}){
   rememberEntities(r.value);
   for(const s of (Array.isArray(r.value.stories)?r.value.stories:r.value.stories?.stories)||[]){
    if(s.className!=='StoryItem'||!s.media)continue;
+   store.put('story:'+id+':'+s.id,s);
    const media=mediaInfo({id:s.id,photo:s.media.photo,document:s.media.document});
    if(media&&['image','video'].includes(media.kind))all.set(s.id,{id:s.id,date:s.date,text:s.caption||'',entities:s.entities||[],media});
   }
@@ -349,18 +356,22 @@ export async function getProfileStories(id,{offsetId=0,limit=24}={}){
  return {items:[...all.values()].sort((a,b)=>b.id-a.id),next,more:rows.length>0&&next!==offsetId};
 }
 export async function downloadStory(id,storyId,thumbnail=false){
- const {c,peer}=await readyPeer(id),result=await c.invoke(new Api.stories.GetStoriesByID({peer,id:[storyId]}));
+ const {c,peer}=await readyPeer(id),store=storiesFor(c),key='story:'+id+':'+storyId;
+ let story=store.get(key);
+ if(!story){const result=await store.run('lookup:'+id+':'+storyId,()=>c.invoke(new Api.stories.GetStoriesByID({peer,id:[storyId]})));story=result.stories?.find(s=>s.id===storyId&&s.media);if(story)store.put(key,story)}
  if(c!==client)throw Error('账号已切换');
- const story=result.stories?.find(s=>s.id===storyId&&s.media);
  if(!story)throw Error('动态已过期或不可见');
  const media=story.media,source=media.photo||media.document;
  const sizes=(media.photo?.sizes||media.document?.thumbs||[]).filter(s=>s.w&&s.h).sort((a,b)=>a.w*a.h-b.w*b.h);
  const thumb=thumbnail?(sizes.filter(s=>Math.max(s.w,s.h)<=(thumbnail==='small'?160:1280)).at(-1)||sizes[0]):null;
  if(thumbnail&&!thumb)return null;
- const data=await c.downloadMedia(media,thumb?{thumb:thumb.type}:{});
- if(c!==client)throw Error('账号已切换');
- if(!data?.length)throw Error('动态媒体无法下载');
- return new Blob([data],{type:thumb||media.photo?'image/jpeg':source?.mimeType||'video/mp4'});
+ return store.run('media:'+id+':'+storyId+':'+(thumb?thumb.type:'full'),async()=>{
+  if(c!==client)throw Error('账号已切换');
+  const data=await c.downloadMedia(media,thumb?{thumb:thumb.type}:{});
+  if(c!==client)throw Error('账号已切换');
+  if(!data?.length)throw Error('动态媒体无法下载');
+  return new Blob([data],{type:thumb||media.photo?'image/jpeg':source?.mimeType||'video/mp4'});
+ });
 }
 export async function getConversationMembers(id,offset=0,limit=40){
  const {c,peer}=await readyPeer(id),info=await getConversationInfo(id);if(!info.group&&!info.channel)return {items:[],more:false,next:0};
@@ -432,6 +443,22 @@ export async function checkInvite(hash){
 }
 export async function joinInvite(hash){
  const c=await getClient(),result=await c.invoke(new Api.messages.ImportChatInvite({hash}));if(c!==client)throw Error('账号已切换');rememberEntities(result);const chat=result.chats?.[0];if(!chat)throw Error('加入申请已提交');return resolvePeer(utils.getPeerId(chat).toString());
+}
+export async function joinConversation(id){
+ const {c,peer}=await readyPeer(id),info=await getConversationInfo(id);
+ if(!info.left)return resolvePeer(id);
+ if(!info.canJoin)throw Error('此群聊暂时无法直接加入');
+ try{
+  const result=await c.invoke(new Api.channels.JoinChannel({channel:peer}));
+  if(c!==client)throw Error('账号已切换');rememberEntities(result);joinRequests.get(c)?.delete(id);
+  // JoinChannel can return UpdatesTooLong without a fresh channel entity.
+  if(!result.chats?.some(e=>utils.getPeerId(e).toString()===id)){const entity=await c.getEntity(peer);if(c!==client)throw Error('账号已切换');rememberEntities({chats:[entity]})}
+  return resolvePeer(id);
+ }catch(error){
+  if(c!==client)throw Error('账号已切换');
+  if(/INVITE_REQUEST_SENT/.test(error.errorMessage||error.message)){if(!joinRequests.has(c))joinRequests.set(c,new Set());joinRequests.get(c).add(id);return {...info,joinPending:true}}
+  throw error;
+ }
 }
 export async function getDiscussionTarget(id,messageId,comment=0){
  const {c,peer}=await readyPeer(id),result=await c.invoke(new Api.messages.GetDiscussionMessage({peer,msgId:messageId}));if(c!==client)throw Error('账号已切换');rememberEntities(result);
