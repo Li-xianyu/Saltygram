@@ -1,3 +1,4 @@
+import {serviceMessage} from './service-message.js';
 import { progressRatio, downloadInParts, createTaskPool } from './media-download.js';
 import { NewMessage } from 'telegram/events/NewMessage.js';
 import { EditedMessage } from 'telegram/events/EditedMessage.js';
@@ -100,7 +101,7 @@ let dialogsLoading;
 export function getDialogs(){return dialogsLoading ||= fetchDialogs().finally(()=>dialogsLoading=null)}
 async function fetchDialogs() {
   const c = await getClient(); const dialogs = await c.getDialogs({ limit: 80 });
-  return dialogs.map((d,index) => { const id = d.id.toString(); peers.set(id, d.inputEntity); entities.set(id,d.entity); const photo=d.entity?.photo; return { id, pinned:!!d.dialog.pinned, pinOrder:d.dialog.pinned?index:null, folderId:d.dialog.folderId||0, avatarKey: photo?.photoId?.toString() || '', title: d.title || '未命名', lastMessageId:d.message?.id, unread: d.unreadCount || 0, unreadMark:!!d.dialog.unreadMark, text: d.message?.message || (d.message?.media ? ({image:'图片',video:'视频',audio:'音频',sticker:'贴纸',file:'文件'}[mediaInfo(d.message)?.kind]||'媒体') : ''), date: d.message?.date, personal: !!d.isUser&&!d.entity?.bot&&!d.entity?.self&&id!==memory.owner, bot:!!d.entity?.bot, group: d.isGroup, channel: d.isChannel, forum: !!d.entity?.forum, readState:{inbox:d.dialog.readInboxMaxId||0,outbox:d.dialog.readOutboxMaxId||0,unread:d.unreadCount||0,broadcast:!!d.entity?.broadcast,saved:id===memory.owner}, online:!!d.entity?.status&&d.entity.status.className==='UserStatusOnline'&&(!d.entity.status.expires||d.entity.status.expires>Date.now()/1000), status:d.entity?.status?{type:d.entity.status.className,wasOnline:d.entity.status.wasOnline,expires:d.entity.status.expires}:null }; });
+  return dialogs.map((d,index) => { const id = d.id.toString(); peers.set(id, d.inputEntity); entities.set(id,d.entity); const photo=d.entity?.photo; return { id, pinned:!!d.dialog.pinned, pinOrder:d.dialog.pinned?index:null, folderId:d.dialog.folderId||0, avatarKey: photo?.photoId?.toString() || '', title: d.title || '未命名', lastMessageId:d.message?.id, unread: d.unreadCount || 0, unreadMark:!!d.dialog.unreadMark, text: d.message?.message || serviceMessage(d.message?.action,{actor:displayName(d.message?.sender)})?.text || (d.message?.media ? ({image:'图片',video:'视频',audio:'音频',sticker:'贴纸',file:'文件'}[mediaInfo(d.message)?.kind]||'媒体') : ''), date: d.message?.date, personal: !!d.isUser&&!d.entity?.bot&&!d.entity?.self&&id!==memory.owner, bot:!!d.entity?.bot, group: d.isGroup, channel: d.isChannel, forum: !!d.entity?.forum, readState:{inbox:d.dialog.readInboxMaxId||0,outbox:d.dialog.readOutboxMaxId||0,unread:d.unreadCount||0,broadcast:!!d.entity?.broadcast,saved:id===memory.owner}, online:!!d.entity?.status&&d.entity.status.className==='UserStatusOnline'&&(!d.entity.status.expires||d.entity.status.expires>Date.now()/1000), status:d.entity?.status?{type:d.entity.status.className,wasOnline:d.entity.status.wasOnline,expires:d.entity.status.expires}:null }; });
 }
 export function mediaInfo(m) {
   if (m.photo) {const size=(m.photo.sizes||[]).filter(s=>s.w>0&&s.h>0).sort((a,b)=>a.w*a.h-b.w*b.h).at(-1);return { width:size?.w,height:size?.h,kind: 'image', mime: 'image/jpeg', name: `photo-${m.id}.jpg`, key:m.photo.id?.toString(), size: 0 }};
@@ -116,13 +117,16 @@ export function mediaInfo(m) {
 }
 function displayName(entity){return [entity?.firstName,entity?.lastName].filter(Boolean).join(' ')||entity?.title||entity?.username||'未知用户'}
 function serialize(m,id){
- rawMessages.set(id+':'+m.id,m);const entity=entities.get(id);const isPrivate=entity?.className==='User';
+ rawMessages.set(id+':'+m.id,m);if(m.sender)rememberEntities({users:m.sender.className==='User'?[m.sender]:[],chats:m.sender.className!=='User'?[m.sender]:[]});const entity=entities.get(id);const isPrivate=entity?.className==='User';
  let replyPeer=id;try{if(m.replyTo?.replyToPeerId)replyPeer=utils.getPeerId(m.replyTo.replyToPeerId).toString()}catch{}
- const media=mediaInfo(m);return {id:m.id,text:m.message||'',out:!!m.out,date:m.date,edited:!!m.editDate,senderName:m.out?'我':displayName(m.sender||entity),media,
+ let senderId=m.senderId?.toString()||'';if(!senderId)try{senderId=utils.getPeerId(m.fromId).toString()}catch{}
+ if(senderId&&!peers.has(senderId)&&peers.has(id)&&m.sender?.className==='User')peers.set(senderId,new Api.InputPeerUserFromMessage({peer:peers.get(id),msgId:m.id,userId:bigInt(senderId)}));
+ const senderName=m.out?'我':displayName(m.sender||entities.get(senderId)||(isPrivate||!senderId?entity:null)),service=serviceMessage(m.action,{actor:senderName,actorId:senderId,nameOf:id=>entities.has(id)?displayName(entities.get(id)):null});
+ const media=mediaInfo(m);return {id:m.id,text:service?.text||m.message||'',service,senderId,topicId:m.replyTo?.forumTopic?(m.replyTo.replyToTopId||m.replyTo.replyToMsgId||0):0,out:!!m.out,date:m.date,edited:!!m.editDate,senderName,media,
  canEdit:!!(m.out||entity?.adminRights?.editMessages)&&!m.viaBotId&&media?.kind!=='sticker'&&!!(m.message||!media),
  canDelete:!!(m.out||isPrivate||entity?.className==='Chat'||entity?.creator||entity?.adminRights?.deleteMessages),deleteForEveryone:!!(m.out||isPrivate||entity?.creator||entity?.adminRights?.deleteMessages),private:isPrivate,channel:entity?.className==='Channel',
  replyId:m.replyTo?.forumTopic&&(!m.replyTo.replyToTopId||m.replyTo.replyToTopId===m.replyTo.replyToMsgId)?0:m.replyTo?.replyToMsgId||0,replyPeer,quote:m.replyTo?.quoteText||'',
- entities:(m.entities||[]).map(e=>({type:e.className,offset:e.offset,length:e.length,url:e.url})),buttons:buttonRows(m),webpage:m.media?.webpage?.url?{url:m.media.webpage.url,title:m.media.webpage.title||m.media.webpage.siteName,description:m.media.webpage.description}:null};
+ entities:service?.entities||(m.entities||[]).map(e=>({type:e.className,offset:e.offset,length:e.length,url:e.url,userId:e.userId?.toString()})),buttons:buttonRows(m),webpage:m.media?.webpage?.url?{url:m.media.webpage.url,title:m.media.webpage.title||m.media.webpage.siteName,description:m.media.webpage.description}:null};
 }
 async function readyPeer(id){const c=await getClient();if(!peers.has(id))await getDialogs();return {c,peer:peers.get(id)||id}}
 async function hydrateReplies(messages,id){
@@ -371,3 +375,22 @@ export async function changeConversation(id,{action,revoke=false}={}){
  for(let n=0;n<100;n++){const result=await c.invoke(new Api.messages.DeleteHistory({peer,maxId:cutoff||0,justClear:action==='clear',revoke:!!(revoke&&info.user&&!info.saved&&!info.bot)}));if(!result.offset)return {removed:action==='delete',cutoff}}
  throw Error('部分记录已处理，历史记录较多，请重试以继续清理');
 }
+
+export async function resolvePeer(reference){
+ const c=await getClient();let id=String(reference),entity=entities.get(id);
+ if(!entity){if(/^\+\d+$/.test(id)){const result=await c.invoke(new Api.contacts.ResolvePhone({phone:id.slice(1)}));if(c!==client)throw Error('账号已切换');rememberEntities(result);entity=result.users?.[0]}else entity=await c.getEntity(peers.get(id)||(/^-?\d+$/.test(id)?bigInt(id):id));if(c!==client)throw Error('账号已切换');rememberEntities({users:entity.className==='User'?[entity]:[],chats:entity.className!=='User'?[entity]:[]});id=utils.getPeerId(entity).toString()}
+ return {...await getConversationInfo(id),...personSummary(entity),personal:entity.className==='User'&&!entity.bot&&!entity.self,unread:0,text:''};
+}
+export async function checkInvite(hash){
+ const c=await getClient(),result=await c.invoke(new Api.messages.CheckChatInvite({hash}));if(c!==client)throw Error('账号已切换');
+ if(result.chat&&result.className==='ChatInviteAlready'){rememberEntities({chats:[result.chat]});return {joined:true,peer:await resolvePeer(utils.getPeerId(result.chat).toString())}}
+ return {joined:false,title:result.title||result.chat?.title||'群组邀请',members:result.participantsCount||result.chat?.participantsCount,requestNeeded:!!result.requestNeeded};
+}
+export async function joinInvite(hash){
+ const c=await getClient(),result=await c.invoke(new Api.messages.ImportChatInvite({hash}));if(c!==client)throw Error('账号已切换');rememberEntities(result);const chat=result.chats?.[0];if(!chat)throw Error('加入申请已提交');return resolvePeer(utils.getPeerId(chat).toString());
+}
+export async function getDiscussionTarget(id,messageId,comment=0){
+ const {c,peer}=await readyPeer(id),result=await c.invoke(new Api.messages.GetDiscussionMessage({peer,msgId:messageId}));if(c!==client)throw Error('账号已切换');rememberEntities(result);
+ const message=result.messages.find(m=>utils.getPeerId(m.peerId).toString()!==id);if(!message)throw Error('该消息没有可访问的讨论区');return {peer:await resolvePeer(utils.getPeerId(message.peerId).toString()),topic:message.id,messageId:comment||message.id};
+}
+export async function getStickerSetByName(name){return fetchStickerSet(new Api.InputStickerSetShortName({shortName:name}))}

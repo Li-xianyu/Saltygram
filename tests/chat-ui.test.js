@@ -16,7 +16,8 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  export const getOwnProfile=async()=>({id:'1',title:'Test Owner',username:'test_owner',about:'Test bio',phone:'123123',avatarKey:'owner-photo'});export const logout=async()=>{globalThis.uiActions.push({type:'logout'});throw Error('模拟退出失败')};export const listAccounts=()=>[];export const getContacts=async()=>[{id:'-2000',title:'Contact Alice',phone:'123456',avatarKey:'contact-photo'},{id:'-3000',title:'Contact Bob',phone:'654321'}];
  export const getDialogs=async()=>[{id:'-1001',title:'测试群',pinned:true,pinOrder:0,forum:true,group:true,avatarKey:'p1'},{id:'-2000',title:'另一个聊天',unread:0}];
  export const getConversationInfo=async(id)=>{const user=id==='-2000',saved=globalThis.uiActions.find(a=>a.type==='contact'&&a.id===id);return {id,title:saved?saved.first+' '+saved.last:user?'另一个聊天':'测试群',firstName:saved?.first||'Alice',lastName:saved?.last||'',user,contact:!!saved,group:!user,forum:!user,canAddContact:user,canClear:true,canDelete:user,canLeave:!user}};
- export const getConversationProfile=async id=>({...await getConversationInfo(id),members:12,online:2,link:'https://t.me/example'});
+ export const resolvePeer=async reference=>{globalThis.uiActions.push({type:'resolve',reference});return reference==='42'?{id:'42',title:'Actor Alice',user:true,personal:true,username:'actor'}:{id:'-1001',title:'测试群',group:true,forum:true}};
+ export const getConversationProfile=async id=>id==='42'?{id:'42',title:'Actor Alice',user:true,username:'actor',about:'Actor bio'}:({...await getConversationInfo(id),members:12,online:2,link:'https://t.me/example'});
  export const getConversationMembers=async()=>({items:[{id:'member',title:'成员'}],next:1,more:false});
  export const getConversationItems=async()=>({items:[],next:0,more:false});
  export const addContact=async(id,first,last)=>{globalThis.uiActions.push({type:'contact',id,first,last});return {id,title:first+' '+last,contact:true}};
@@ -31,7 +32,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  {id:104,text:'',date:1,media:{kind:'video',key:'vid4',mime:'video/mp4',name:'不显示视频名称.mp4',duration:65,width:1280,height:720,size:120}},
  {id:105,text:'我的消息',date:1,out:true,canEdit:true,canDelete:true,deleteForEveryone:true,private:true,senderName:'我'},
  {id:106,text:'回复内容',date:1,replyId:101,replyPeer:'-1001',reply:{id:101,text:'打开链接',senderName:'Peer'}},
- ...Array.from({length:44},(_,i)=>i===1?{id:108,text:'',date:1,media:{kind:'audio',audioTitle:'Shared Song',performer:'Artist',name:'secret-name.flac',duration:120}}:({id:107+i,text:'消息'+(107+i),date:1}))
+ ...Array.from({length:44},(_,i)=>i===0?{id:107,text:'from actor',date:1,senderName:'Actor Alice',senderId:'42'}:i===2?{id:109,text:'Actor Alice通过邀请链接加入群组',date:1,senderName:'Actor Alice',senderId:'42',service:{type:'MessageActionChatJoinedByLink'},entities:[{type:'MessageEntityMentionName',offset:0,length:11,userId:'42'}]}:i===1?{id:108,text:'',date:1,media:{kind:'audio',audioTitle:'Shared Song',performer:'Artist',name:'secret-name.flac',duration:120}}:({id:107+i,text:'消息'+(107+i),date:1}))
  ]};
  export const downloadMedia=async(chat,id,progress,thumbnail)=>{globalThis.uiMediaCalls.push({id,thumbnail});return new Blob(['media'],{type:thumbnail?'image/jpeg':'video/mp4'})};export const downloadAvatar=async()=>new Blob(['avatar'],{type:'image/jpeg'});
  export const pressButton=async()=>({message:'完成'});
@@ -48,7 +49,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  `;
  let app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
  app=app.replace("'./telegram.js'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(adapter).toString('base64')));
- for(const file of ['audio-player.js','video-policy.js','media-viewer.js','page-gestures.js','swipe-close.js','cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
+ for(const file of ['telegram-links.js','service-message.js','audio-player.js','video-policy.js','media-viewer.js','page-gestures.js','swipe-close.js','cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
  app=app.replace("'pako'",JSON.stringify(import.meta.resolve('pako')));
  app=app.replace("'qrcode'",JSON.stringify(import.meta.resolve('qrcode')));
  try{
@@ -72,6 +73,9 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   for(let i=0;i<200;i++)await new Promise(r=>setImmediate(r));
   assert.equal(document.querySelector('#chatSearch'),null);assert.equal(document.querySelector('#mediaPanelButton'),null);
   assert.ok(document.querySelector('#chatIdentity #chatAvatar'));
+  await document.querySelector('[data-message-id="107"] button.sender-name').onclick();assert.equal(document.querySelector('#peerProfile').open,true);assert.equal(document.querySelector('#peerProfileName').textContent,'Actor Alice');assert.equal(document.querySelector('#peerProfileAbout').textContent,'Actor bio');assert.equal(document.querySelector('#chatTitle').textContent,'测试群');document.querySelector('#closePeerProfile').onclick();assert.equal(document.querySelector('#peerProfile').open,false);
+  assert.ok(document.querySelector('[data-message-id="109"] .service-bubble').textContent.includes('加入群组'));assert.equal(document.querySelector('[data-message-id="109"] .sender-name'),null);
+  const tgLink=document.createElement('a');tgLink.href='https://t.me/groupname/101';tgLink.textContent='jump';tgLink.target='_blank';document.body.append(tgLink);const tgClick=new window.Event('click',{bubbles:true,cancelable:true});tgLink.dispatchEvent(tgClick);assert.equal(tgClick.defaultPrevented,true);for(let i=0;i<30;i++)await new Promise(r=>setImmediate(r));assert.ok(document.querySelector('[data-message-id="101"]').classList.contains('message-highlight'));tgLink.remove();
   document.querySelector('#chatIdentity').onclick();for(let i=0;i<30;i++)await new Promise(r=>setImmediate(r));
   assert.equal(document.body.classList.contains('info-open'),true);assert.equal(document.querySelector('.info-name').textContent,'测试群');
   assert.ok(document.querySelector('.info-status').textContent.includes('12 位成员'));assert.ok(document.querySelector('.info-member'));
