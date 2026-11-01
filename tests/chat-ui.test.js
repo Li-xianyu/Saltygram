@@ -19,6 +19,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  export const resolvePeer=async reference=>{globalThis.uiActions.push({type:'resolve',reference});return reference==='42'?{id:'42',title:'Actor Alice',user:true,personal:true,username:'actor'}:{id:'-1001',title:'测试群',group:true,forum:true}};
  export const getConversationProfile=async id=>id==='42'?{id:'42',title:'Actor Alice',user:true,username:'actor',about:'Actor bio'}:({...await getConversationInfo(id),members:12,online:2,link:'https://t.me/example'});
  export const getConversationMembers=async()=>({items:[{id:'member',title:'成员'}],next:1,more:false});
+ export const getBotCommands=async()=>[{command:'help',description:'帮助'},{command:'start',description:'开始'}];export const getProfileStories=async()=>({items:[],next:0,more:false});
  export const getConversationItems=async()=>({items:[],next:0,more:false});
  export const addContact=async(id,first,last)=>{globalThis.uiActions.push({type:'contact',id,first,last});return {id,title:first+' '+last,contact:true}};
  export const markConversationUnread=async(id,unread=true)=>{globalThis.uiActions.push({type:'markUnread',id,unread})};
@@ -49,7 +50,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  `;
  let app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
  app=app.replace("'./telegram.js'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(adapter).toString('base64')));
- for(const file of ['button-label.js','telegram-links.js','service-message.js','audio-player.js','video-policy.js','media-viewer.js','page-gestures.js','swipe-close.js','cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
+ for(const file of ['profile-stories.js','button-label.js','telegram-links.js','service-message.js','audio-player.js','video-policy.js','media-viewer.js','page-gestures.js','swipe-close.js','cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
  app=app.replace("'pako'",JSON.stringify(import.meta.resolve('pako')));
  app=app.replace("'qrcode'",JSON.stringify(import.meta.resolve('qrcode')));
  try{
@@ -233,6 +234,8 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   document.querySelector('#chatIdentity').onclick();for(let i=0;i<10;i++)await new Promise(r=>setImmediate(r));
   assert.ok(document.body.classList.contains('info-open'));
   swipeBack('#conversationInfo');assert.equal(document.body.classList.contains('info-open'),false);assert.ok(document.body.classList.contains('chat-open'));
+  await document.querySelector('#dialogs [data-chat-id="-2000"]').onclick();
+  const composer=document.querySelector('#composer'),message=document.querySelector('#message');message.value='/';await composer.onsubmit({preventDefault(){}});assert.equal(message.value,'');assert.equal(document.querySelectorAll('.bot-command-list button').length,2);assert.equal(document.querySelector('.bot-command-list strong').textContent,'/help');
   swipeBack('main');assert.equal(document.body.classList.contains('chat-open'),false);
   assert.equal(document.body.classList.contains('swipe-route-chat'),false);assert.equal(document.body.classList.contains('swipe-route-info'),false);
  }finally{globalThis.setInterval=originalInterval}

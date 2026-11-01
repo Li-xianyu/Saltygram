@@ -18,7 +18,9 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  async deleteMessages(peer,ids,options){globalThis.adapterCalls.push({method:'delete',ids,options})}
  async markAsRead(peer,message,options){globalThis.adapterCalls.push({method:'read',options})}
  async invoke(req){globalThis.adapterCalls.push({method:req.className,req});
- if(req.className==='users.GetFullUser')return {fullUser:{about:'My bio'},users:[]};
+ if(req.className==='users.GetFullUser')return {fullUser:{about:'My bio',botInfo:{commands:[{command:'help',description:'Help'}]}},users:[]};
+ if(req.className==='stories.GetPeerStories')return {stories:{stories:[{className:'StoryItem',id:12,date:1,media:{photo:{id:99,sizes:[]}}}]},users:[],chats:[]};
+ if(req.className==='stories.GetPinnedStories')return {stories:req.offsetId?[]:[{className:'StoryItem',id:11,date:1,media:{photo:{id:98,sizes:[]}}}],users:[],chats:[]};
  if(req.className==='channels.GetFullChannel')return {fullChat:{participantsCount:80,onlineCount:5,about:'Group',exportedInvite:{link:'https://t.me/+demo'}},users:[],chats:[new Api.Channel({id:8,title:'Group',megagroup:true,photo:new Api.ChatPhotoEmpty(),date:1})]};
  if(req.className==='channels.GetParticipants')return {count:1,participants:[new Api.ChannelParticipant({userId:2,date:1})],users:[new Api.User({id:2,firstName:'Alice',status:new Api.UserStatusRecently()})]};
  if(req.className==='messages.Search'||req.className==='messages.GetSavedHistory')return {messages:[new Api.Message({id:800,peerId:new Api.PeerUser({userId:1}),date:1,message:'saved link https://example.com'})],users:[],chats:[]};
@@ -74,6 +76,7 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  await api.downloadMedia('2',902,undefined,'large');assert.equal(globalThis.adapterCalls.filter(c=>c.method==='mediaDownload').at(-1).options.thumb,'x');
  const sets=await api.getMyStickerSets();assert.equal(sets[0].installed,true);await api.getStickerSetById('5');await api.installStickerSet('5');assert.ok(globalThis.adapterCalls.some(c=>c.method==='messages.InstallStickerSet'&&!c.req.archived));
  const profile=await api.getConversationProfile('-1008');assert.equal(profile.members,80);assert.equal(profile.online,5);assert.equal(profile.link,'https://t.me/+demo');
+ const stories=await api.getProfileStories('2');assert.deepEqual(stories.items.map(s=>s.id),[12,11]);assert.equal(stories.more,true);assert.equal((await api.getProfileStories('2',{offsetId:11})).more,false);assert.equal(await api.getBotCommands('2'),null);
  const members=await api.getConversationMembers('-1008',40);assert.equal(members.items[0].title,'Alice');assert.equal(globalThis.adapterCalls.find(c=>c.method==='channels.GetParticipants').req.offset,40);
  const saved=await api.getConversationItems('-1008',{saved:true,offsetId:900});assert.equal(saved.mediaPeer,'1');assert.equal(saved.items[0].id,800);const savedReq=globalThis.adapterCalls.find(c=>c.method==='messages.GetSavedHistory').req;assert.equal(savedReq.offsetId,900);assert.ok(!('saved' in savedReq));
  await api.getConversationItems('2',{filter:'link',offsetId:100});const search=globalThis.adapterCalls.find(c=>c.method==='messages.Search').req;assert.equal(search.filter.className,'InputMessagesFilterUrl');assert.equal(search.offsetId,100);

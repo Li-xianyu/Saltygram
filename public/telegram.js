@@ -322,6 +322,46 @@ export async function getConversationProfile(id){
  link:base.group?(e.username?'https://t.me/'+e.username:full?.exportedInvite?.link||''):''};
 }
 export async function getOnlineCount(id){const {c,peer}=await readyPeer(id);try{return (await c.invoke(new Api.messages.GetOnlines({peer}))).onlines}catch{return undefined}}
+export async function getBotCommands(id){
+ const {c,peer}=await readyPeer(id),info=await getConversationInfo(id);
+ if(!info.bot)return null;
+ const result=await c.invoke(new Api.users.GetFullUser({id:utils.getInputUser(peer)}));
+ if(c!==client)throw Error('账号已切换');
+ return (result.fullUser?.botInfo?.commands||[]).map(x=>({command:x.command,description:x.description||''}));
+}
+export async function getProfileStories(id,{offsetId=0,limit=24}={}){
+ const {c,peer}=await readyPeer(id);
+ const requests=[c.invoke(new Api.stories.GetPinnedStories({peer,offsetId,limit}))];
+ if(!offsetId)requests.push(c.invoke(new Api.stories.GetPeerStories({peer})));
+ const results=await Promise.allSettled(requests);
+ if(c!==client)throw Error('账号已切换');
+ if(results.every(r=>r.status==='rejected'))throw results[0].reason;
+ const pinned=results[0].status==='fulfilled'?results[0].value:null,all=new Map();
+ for(const r of results)if(r.status==='fulfilled'){
+  rememberEntities(r.value);
+  for(const s of (Array.isArray(r.value.stories)?r.value.stories:r.value.stories?.stories)||[]){
+   if(s.className!=='StoryItem'||!s.media)continue;
+   const media=mediaInfo({id:s.id,photo:s.media.photo,document:s.media.document});
+   if(media&&['image','video'].includes(media.kind))all.set(s.id,{id:s.id,date:s.date,text:s.caption||'',entities:s.entities||[],media});
+  }
+ }
+ const rows=pinned?.stories||[],next=rows.at(-1)?.id||0;
+ return {items:[...all.values()].sort((a,b)=>b.id-a.id),next,more:rows.length>0&&next!==offsetId};
+}
+export async function downloadStory(id,storyId,thumbnail=false){
+ const {c,peer}=await readyPeer(id),result=await c.invoke(new Api.stories.GetStoriesByID({peer,id:[storyId]}));
+ if(c!==client)throw Error('账号已切换');
+ const story=result.stories?.find(s=>s.id===storyId&&s.media);
+ if(!story)throw Error('动态已过期或不可见');
+ const media=story.media,source=media.photo||media.document;
+ const sizes=(media.photo?.sizes||media.document?.thumbs||[]).filter(s=>s.w&&s.h).sort((a,b)=>a.w*a.h-b.w*b.h);
+ const thumb=thumbnail?(sizes.filter(s=>Math.max(s.w,s.h)<=(thumbnail==='small'?160:1280)).at(-1)||sizes[0]):null;
+ if(thumbnail&&!thumb)return null;
+ const data=await c.downloadMedia(media,thumb?{thumb:thumb.type}:{});
+ if(c!==client)throw Error('账号已切换');
+ if(!data?.length)throw Error('动态媒体无法下载');
+ return new Blob([data],{type:thumb||media.photo?'image/jpeg':source?.mimeType||'video/mp4'});
+}
 export async function getConversationMembers(id,offset=0,limit=40){
  const {c,peer}=await readyPeer(id),info=await getConversationInfo(id);if(!info.group&&!info.channel)return {items:[],more:false,next:0};
  let result,rows;
