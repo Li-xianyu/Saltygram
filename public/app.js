@@ -1,4 +1,5 @@
 import {installFilterCycle} from './filter-cycle.js';
+import {createAIManager} from './ai-manager.js';
 import {installConnectionLatency} from './connection-latency.js';
 import {placeContextMenu,menuIcon,iconForMenuLabel,installLongPressMenu} from './context-menu.js';
 import {installComposerLayout} from './composer-layout.js';
@@ -86,6 +87,7 @@ const updateContactList=createDialogList($('#contactsView'),{isVisible:()=>!docu
 const updateDialogList=createDialogList($('#dialogs'),{animate:()=>!watchDocumentScroll(),getScroller:()=>watchDocumentScroll()?(document.scrollingElement||document.documentElement):$('#dialogs'),getZoom:()=>visualSettings.scale||1,isVisible:()=>!document.hidden&&!document.body.classList.contains('nav-contacts')&&!document.body.classList.contains('nav-me')&&(!document.body.classList.contains('chat-open')||window.innerWidth>700),select,contextMenu:(id,event,row)=>openConversationMenu(id,event,row),avatar,formatTime:time,observeAvatar:el=>visibleResources.observe(el),releaseAvatar:el=>visibleResources.unobserve(el)});
 const swipePages=createFolderPages({root:$('#dialogs'),avatar,formatTime:time,getOptions:()=>({active,tab,query:$('#search').value,connected})});
 const folderUI=createFolderUI({api:telegram,host:document.querySelector('.tabs'),swipeRoot:$('#dialogs'),swipePages,getDialogs:()=>dialogs,onChange:()=>renderDialogs(),cacheGet:snapshotGet,cachePut:snapshotPut,scope:()=>telegram.cacheScope(),toast,getScale:()=>visualSettings.scale||1});
+const aiManager=createAIManager({telegram,toast,getScale:()=>visualSettings.scale||1,onChanged:folders=>{folderUI.apply(folders);requestRecovery(0)}});
 function renderDialogs(){
  dialogs=orderDialogs(dialogs);
  updateDialogList(folderUI.filter(dialogs),{active,tab,viewKey:folderUI.key(),query:$('#search').value,connected});
@@ -447,6 +449,7 @@ function renderMenu(){
   b.onclick=()=>{if(window.innerWidth>700||key==='chat')closeMenu();switchNav(key)};
   panel.append(b);
  }
+ const ai=document.createElement('button');ai.className='menu-item';ai.type='button';ai.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/></svg><span>AI 管家</span>';ai.onclick=()=>{closeMenu();void aiManager.open()};panel.append(ai);
  const settings=document.createElement('button');settings.className='menu-item';settings.type='button';
  settings.innerHTML=NAV_SVG.settings+'设置';
  settings.onclick=openSettings;

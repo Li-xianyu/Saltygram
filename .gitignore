@@ -8,3 +8,7 @@ node_modules/
 dist/
 server.legacy.js
 .reasonix/
+
+.wrangler/
+.dev.vars
+.dev.vars.*

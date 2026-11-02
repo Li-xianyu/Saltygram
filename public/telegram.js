@@ -559,3 +559,8 @@ export function measureConnectionLatency(){
  const release=()=>{if(latencyProbes.get(c)===probe)latencyProbes.delete(c)};request.then(release,release);
  return probe;
 }
+
+export async function searchMessages(id,query,{offsetId=0,limit=15}={}){
+ if(typeof query!=='string'||!query.trim()||query.length>300)throw Error('搜索关键词需要 1–300 个字');
+ const {c,peer}=await readyPeer(id);const result=await c.getMessages(peer,{search:query,offsetId,limit:Math.max(1,Math.min(30,limit))});if(c!==client)throw Error('账号已切换');return result.filter(m=>m.className!=='MessageEmpty').map(m=>serialize(m,id)).reverse();
+}

@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "saltygram-ai",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-10-30",
+  "account_id": "517696097938c59eff77df683e91921e",
+  "workers_dev": true,
+  "durable_objects": {"bindings": [{"name": "ACCOUNT_AGENT", "class_name": "AccountAgent"}]},
+  "migrations": [{"tag": "v1", "new_sqlite_classes": ["AccountAgent"]}],
+  "observability": {"enabled": false}
+}
