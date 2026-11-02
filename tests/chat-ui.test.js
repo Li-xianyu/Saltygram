@@ -235,7 +235,9 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   swipeBack('main');assert.equal(document.body.classList.contains('chat-open'),false);assert.ok(document.body.classList.contains('nav-contacts'));
   swipeBack('#contactsPage');assert.equal(document.body.classList.contains('nav-contacts'),false);assert.equal(document.querySelector('#menuPanel').hidden,false);
   swipeBack('#menuPanel');assert.equal(document.querySelector('#menuPanel').hidden,true);
+  const aiPane=document.querySelector('#aiManager');aiPane.open=true;aiPane.setAttribute('open','');aiPane.close=()=>{aiPane.open=false;aiPane.removeAttribute('open');aiPane.dispatchEvent(new window.Event('close'))};document.body.classList.add('ai-chat-open');
   await document.querySelector('#dialogs [data-chat-id="-1001"]').onclick();
+  assert.equal(aiPane.open,false,'selecting a sidebar conversation exits the AI pane');assert.equal(document.body.classList.contains('ai-chat-open'),false);
   document.querySelector('#chatIdentity').onclick();for(let i=0;i<10;i++)await new Promise(r=>setImmediate(r));
   assert.ok(document.body.classList.contains('info-open'));
   swipeBack('#conversationInfo');assert.equal(document.body.classList.contains('info-open'),false);assert.ok(document.body.classList.contains('chat-open'));

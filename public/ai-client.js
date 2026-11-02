@@ -1,6 +1,17 @@
+// randomUUID is HTTPS-only; LAN HTTP still exposes getRandomValues.
+// These IDs identify requests/devices and are never authentication secrets.
+export function createRequestId(source=globalThis.crypto){
+ if(typeof source?.randomUUID==='function')return source.randomUUID();
+ const bytes=new Uint8Array(16);
+ if(typeof source?.getRandomValues==='function')source.getRandomValues(bytes);
+ else for(let i=0;i<bytes.length;i++)bytes[i]=Math.floor(Math.random()*256);
+ bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
+ const hex=[...bytes].map(v=>v.toString(16).padStart(2,'0')).join('');
+ return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20);
+}
 export function createAIClient({fetcher=fetch,store=localStorage}={}){
  const key='saltygram-ai-connection';let connection={url:'',token:''};try{connection={...connection,...JSON.parse(store.getItem(key)||'{}')}}catch{}
- let device=store.getItem('saltygram-ai-device');if(!device){device=crypto.randomUUID();store.setItem('saltygram-ai-device',device)}
+ let device=store.getItem('saltygram-ai-device');if(!device){device=createRequestId();store.setItem('saltygram-ai-device',device)}
  function configure(url,token){const u=new URL(url);if(u.protocol!=='https:'&&!(u.protocol==='http:'&&['localhost','127.0.0.1',location.hostname].includes(u.hostname)))throw Error('后端需要 HTTPS 地址');connection={url:u.origin,token:token.trim()};store.setItem(key,JSON.stringify(connection))}
  async function api(owner,path,{method='GET',body}={}){
   if(!/^\d{1,20}$/.test(String(owner)))throw Error('请先登录 Telegram');if(!connection.url||!connection.token)throw Error('请先连接 AI 后端');

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createAITelegramTools} from '../public/ai-telegram-tools.js';
+import {createAITelegramTools,folderRevision} from '../public/ai-telegram-tools.js';
 const folder={id:2,title:'音乐',includePeers:['10'],excludePeers:[],pinnedPeers:[],groups:true};
 test('AI folder tools require fresh revisions and preserve existing selections',async()=>{
  let folders=[structuredClone(folder)],saved,snapshot;const telegram={settings:()=>({owner:'123'}),getDialogFolders:async()=>structuredClone(folders),saveDialogFolder:async data=>{saved=data;folders=[data];return folders}};
@@ -16,4 +16,17 @@ test('AI tools discard reads after an account switch and report pagination hones
  let owner='123';const telegram={settings:()=>({owner}),getDialogs:async()=>{owner='456';return []},getMessages:async()=>[{id:9,text:'a'.repeat(2100)}]};const tools=createAITelegramTools({telegram});
  await assert.rejects(tools.execute('list_chats',{},'123'),/账号已切换/);owner='123';
  const r=await tools.execute('read_history',{chatId:'10',limit:1},'123');assert.equal(r.hasMore,true);assert.equal(r.nextOffsetId,9);assert.equal(r.messages[0].textTruncated,true);assert.equal(r.messages[0].text.length,2000);
+});
+
+
+test('LAN HTTP without crypto.subtle can read and create folders using the same SHA-256 revisions',async()=>{
+ const original=Object.getOwnPropertyDescriptor(globalThis,'crypto');const expected=await folderRevision([folder]);let writes=0;
+ try{
+  Object.defineProperty(globalThis,'crypto',{configurable:true,value:{}});
+  assert.equal(await folderRevision([folder]),expected);
+  assert.equal(await folderRevision('abc'),'6cc43f858fbb763301637b5af970e2a46b46f461f27e5a0f41e009c59b827b25');
+  let folders=[structuredClone(folder)];const tools=createAITelegramTools({telegram:{settings:()=>({owner:'123'}),getDialogFolders:async()=>folders,saveDialogFolder:async data=>{writes++;folders=[...folders,{id:3,...data}];return folders}}});
+  assert.equal((await tools.execute('list_folders',{},'123')).snapshotRevision,expected);
+  const result=await tools.execute('create_folder',{title:'私聊',includePeers:['10']},'123');assert.equal(result.ok,true);assert.equal(writes,1);assert.equal(result.folders.length,2);
+ }finally{Object.defineProperty(globalThis,'crypto',original)}
 });

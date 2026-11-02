@@ -1,5 +1,6 @@
+import {sha256} from 'telegram/Helpers.js';
 import {validateTool} from './ai-tool-specs.js';
-export async function folderRevision(value){const bytes=new TextEncoder().encode(JSON.stringify(value));return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(x=>x.toString(16).padStart(2,'0')).join('')}
+export async function folderRevision(value){const bytes=new TextEncoder().encode(JSON.stringify(value));return [...new Uint8Array(globalThis.crypto?.subtle?await globalThis.crypto.subtle.digest('SHA-256',bytes):await sha256(bytes))].map(x=>x.toString(16).padStart(2,'0')).join('')}
 const fields=(value,keys)=>Object.fromEntries(keys.filter(k=>value[k]!==undefined).map(k=>[k,value[k]]));
 const peerId=id=>{if(typeof id!=='string'||!/^(-?\d+)$/.test(id))throw Error('会话 ID 格式错误');return id};
 export function createAITelegramTools({telegram,onChanged=()=>{}}){

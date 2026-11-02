@@ -217,6 +217,7 @@ function renderMessages(mode='preserve'){
 }
 function updateHistoryControl(){const p=paging();$('#loadOlder').disabled=p.busy;$('#loadOlder').textContent=p.busy?'加载中':p.more?'加载更早消息':'已到最早';$('#loadOlder').hidden=!active;$('#returnLatest').hidden=!p.around}
 async function select(id,topic=0){
+ aiManager.close();
  if(document.body.classList.contains('info-open'))nav.goBack();
  rememberChatScroll();
  const d=dialogs.find(d=>d.id===id);if(!d)return;if(!document.body.classList.contains('chat-open'))routeScrolls[sidebarRoute()]=watchDocumentScroll()?messageScroller().scrollTop:($('#'+(sidebarRoute()==='contacts'?'contactsView':sidebarRoute()==='me'?'meView':'dialogs')).scrollTop||0);const changing=id!==active;readCandidate=0;clearTimeout(readTimer);if(composeContext?.edit)setMessageValue('');active=id;activeTopic=topic;const key=threadKey(),version=++generation;clearCompose();chatMembership.update(d);void telegram.getConversationInfo(id).then(info=>{if(version===generation&&active===id){Object.assign(d,info);chatMembership.update(d)}}).catch(()=>{});closeMessageMenu();closeConversationMenu();
@@ -449,7 +450,7 @@ function renderMenu(){
   b.onclick=()=>{if(window.innerWidth>700||key==='chat')closeMenu();switchNav(key)};
   panel.append(b);
  }
- const ai=document.createElement('button');ai.className='menu-item';ai.type='button';ai.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/></svg><span>AI 管家</span>';ai.onclick=()=>{closeMenu();void aiManager.open()};panel.append(ai);
+
  const settings=document.createElement('button');settings.className='menu-item';settings.type='button';
  settings.innerHTML=NAV_SVG.settings+'设置';
  settings.onclick=openSettings;
@@ -510,6 +511,11 @@ function closeSettings(){$('#settingsPage').hidden=true;document.body.classList.
 $('#settingsBack').onclick=closeSettings;
 $('#settingsVisual').onclick=openVisual;
 $('#settingsFolders').onclick=()=>folderUI.open();
+const aiSetting=document.createElement('button');aiSetting.className='setting-row panel-round-item';aiSetting.type='button';aiSetting.innerHTML='<span class="setting-label">AI 管家</span><span class="setting-arrow">›</span>';aiSetting.onclick=()=>void aiManager.open({settings:true});$('#settingsFolders').after(aiSetting);
+const projectName=document.querySelector('aside header h1');projectName.title='双击打开 AI 管家';let lastProjectOpen=0,lastProjectTap=null;
+function openProjectAI(e){if(e.target.closest('#statusDot,#connectionLatency'))return;e.preventDefault();const now=Date.now();if(now-lastProjectOpen<500)return;lastProjectOpen=now;void aiManager.open()}
+projectName.addEventListener('dblclick',openProjectAI);projectName.addEventListener('pointerup',e=>{if(e.pointerType!=='touch'||e.target.closest('#statusDot,#connectionLatency'))return;const now=Date.now();if(lastProjectTap&&now-lastProjectTap.time<350&&Math.hypot(e.clientX-lastProjectTap.x,e.clientY-lastProjectTap.y)<20){lastProjectTap=null;openProjectAI(e)}else lastProjectTap={time:now,x:e.clientX,y:e.clientY}});
+
 function closeVisual(){$('#visualPage').hidden=true;refreshFullscreenRounds()}
 $('#visualBack').onclick=closeVisual;
 $('#fontSizeSlider').oninput=e=>{visualSettings.fontSize=Number(e.target.value);$('#fontSizeValue').textContent=visualSettings.fontSize;applyVisualSettings();persistVisualSettings()};
@@ -906,7 +912,7 @@ $('#watchHapticsEnabled').onchange=()=>{try{localStorage.setItem('watch-haptics'
 $('#testWatchHaptics').onclick=()=>toast(!watchHaptics.supported()?'此浏览器未提供震动接口':watchHaptics.test()?'已请求短震动；是否生效以手表实际反馈为准':'震动未获允许，请开启开关并检查浏览器设置');
 
 // Unified back ownership: native dialogs > settings > menus > audio > info > chat > sidebar route.
-const dialogBackButtons={login:'closeLogin',mediaLibrary:'closeMediaLibrary',mediaViewer:'closeViewer',peerProfile:'closePeerProfile',storageDialog:'closeStorage',stickerPack:'closeStickerPack',myStickersDialog:'closeMyStickers',deleteDialog:'cancelDelete',contactDialog:'closeContact',conversationActionDialog:'cancelConversationAction'};
+const dialogBackButtons={aiManager:'aiBack',login:'closeLogin',mediaLibrary:'closeMediaLibrary',mediaViewer:'closeViewer',peerProfile:'closePeerProfile',storageDialog:'closeStorage',stickerPack:'closeStickerPack',myStickersDialog:'closeMyStickers',deleteDialog:'cancelDelete',contactDialog:'closeContact',conversationActionDialog:'cancelConversationAction'};
 const mobileRoute=()=>window.innerWidth<=700;
 const shown=root=>!root.hidden;
 const preview=kind=>()=>{
