@@ -1,3 +1,4 @@
+import {installProjectEntry} from './project-entry.js';
 import {installFilterCycle} from './filter-cycle.js';
 import {createAIManager} from './ai-manager.js';
 import {installConnectionLatency} from './connection-latency.js';
@@ -512,9 +513,8 @@ $('#settingsBack').onclick=closeSettings;
 $('#settingsVisual').onclick=openVisual;
 $('#settingsFolders').onclick=()=>folderUI.open();
 const aiSetting=document.createElement('button');aiSetting.className='setting-row panel-round-item';aiSetting.type='button';aiSetting.innerHTML='<span class="setting-label">AI 管家</span><span class="setting-arrow">›</span>';aiSetting.onclick=()=>void aiManager.open({settings:true});$('#settingsFolders').after(aiSetting);
-const projectName=document.querySelector('aside header h1');projectName.title='双击打开 AI 管家';let lastProjectOpen=0,lastProjectTap=null;
-function openProjectAI(e){if(e.target.closest('#statusDot,#connectionLatency'))return;e.preventDefault();const now=Date.now();if(now-lastProjectOpen<500)return;lastProjectOpen=now;void aiManager.open()}
-projectName.addEventListener('dblclick',openProjectAI);projectName.addEventListener('pointerup',e=>{if(e.pointerType!=='touch'||e.target.closest('#statusDot,#connectionLatency'))return;const now=Date.now();if(lastProjectTap&&now-lastProjectTap.time<350&&Math.hypot(e.clientX-lastProjectTap.x,e.clientY-lastProjectTap.y)<20){lastProjectTap=null;openProjectAI(e)}else lastProjectTap={time:now,x:e.clientX,y:e.clientY}});
+installProjectEntry({title:document.querySelector('aside header h1'),onOpen:()=>void aiManager.open()});
+
 
 function closeVisual(){$('#visualPage').hidden=true;refreshFullscreenRounds()}
 $('#visualBack').onclick=closeVisual;
