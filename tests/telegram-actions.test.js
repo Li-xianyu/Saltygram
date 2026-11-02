@@ -20,6 +20,7 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  async invoke(req){globalThis.adapterCalls.push({method:req.className,req});
  if(req.className==='messages.GetDialogFilters')return {filters:[new Api.DialogFilterDefault(),new Api.DialogFilter({id:2,title:new Api.TextWithEntities({text:'Friends',entities:[]}),contacts:true,pinnedPeers:[],includePeers:[],excludePeers:[]})]};
  if(['messages.UpdateDialogFilter','messages.UpdateDialogFiltersOrder'].includes(req.className))return true;
+ if(req.className==='Ping')return new Api.Pong({msgId:req.pingId,pingId:req.pingId});
  if(req.className==='messages.SendVote')return {updates:[{className:'UpdateMessagePoll',pollId:123,results:{totalVoters:req.options.length,results:req.options.map(option=>({option,voters:1,chosen:true}))}}]};
  if(req.className==='users.GetFullUser')return {fullUser:{about:'My bio',profilePhoto:{id:88,videoSizes:[{className:'VideoSize',w:160,h:160,type:'u'},{className:'VideoSize',w:640,h:640,type:'v'}]},botInfo:{commands:[{command:'help',description:'Help'}]}},users:[]};
  if(req.className==='stories.GetPeerStories')return {stories:{stories:[{className:'StoryItem',id:12,date:1,media:{photo:{id:99,sizes:[]}}}]},users:[],chats:[]};
@@ -47,11 +48,15 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  source=source.replace("'./mtproto-compat.js'",JSON.stringify(new URL('../public/mtproto-compat.js',import.meta.url).href));
  const api=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
  const folders=await api.getDialogFolders();assert.equal(folders[0].title,'Friends');await api.saveDialogFolder({...folders[0],title:'Friends2'});const savedFolder=globalThis.adapterCalls.find(c=>c.method==='messages.UpdateDialogFilter').req;assert.equal(savedFolder.filter.contacts,true);assert.equal(savedFolder.filter.title.text,'Friends2');await api.reorderDialogFolders([2]);assert.deepEqual(globalThis.adapterCalls.find(c=>c.method==='messages.UpdateDialogFiltersOrder').req.order,[0,2]);await api.deleteDialogFolder(2);assert.equal(globalThis.adapterCalls.filter(c=>c.method==='messages.UpdateDialogFilter').at(-1).req.filter,undefined);
+ const rtt=api.measureConnectionLatency();assert.equal(api.measureConnectionLatency(),rtt);assert.ok(await rtt>=1);
  const own=await api.getOwnProfile();assert.deepEqual(own,{id:'1',title:'Owner',username:'owner',about:'My bio',phone:'123',avatarKey:'8'});
  const {extensions}=await import('telegram');const {ConnectionTCPObfuscated}=await import('telegram/network/index.js');
  assert.equal(globalThis.adapterOptions.networkSocket,extensions.PromisedWebSockets);
  assert.equal(globalThis.adapterOptions.connection,ConnectionTCPObfuscated);assert.equal(globalThis.adapterOptions.useWSS,true);
  const dialogs=await api.getDialogs();assert.equal(dialogs[0].personal,true);assert.equal(dialogs[0].pinned,true);assert.equal(dialogs[0].pinOrder,0);assert.equal(dialogs[1].pinned,false);await api.getMessages('2',10,{offsetId:300,limit:50});const page=globalThis.adapterCalls.find(c=>c.method==='history');assert.equal(page.options.offsetId,300);assert.equal(page.options.replyTo,10);
+ await api.setConversationPinned('2',true);const pin=globalThis.adapterCalls.find(c=>c.method==='messages.ToggleDialogPin').req;assert.equal(pin.pinned,true);assert.equal(pin.peer.peer.userId.toString(),'2');
+ await api.setConversationPinned('2',false,{filterId:2});const unpin=globalThis.adapterCalls.filter(c=>c.method==='messages.UpdateDialogFilter').at(-1).req;assert.equal(unpin.filter.pinnedPeers.length,0);assert.equal(unpin.filter.includePeers[0].userId.toString(),'2');assert.equal(unpin.filter.contacts,true);
+ await api.setConversationPinned('2',true,{filterId:2});const folderPin=globalThis.adapterCalls.filter(c=>c.method==='messages.UpdateDialogFilter').at(-1).req;assert.equal(folderPin.filter.pinnedPeers[0].userId.toString(),'2');
  const [pollMessage]=await api.getMessages('2',0,{ids:[702]});assert.equal(pollMessage.media.kind,'poll');const voted=await api.votePoll('2',702,[1]);assert.equal(voted.media.answers[1].chosen,true);const voteRequest=globalThis.adapterCalls.find(c=>c.method==='messages.SendVote').req;assert.deepEqual([...voteRequest.options[0]],[1,128]);await api.votePoll('2',702,[]);await assert.rejects(api.votePoll('2',702,[0,1]),/有效/);
  const [albumMessage]=await api.getMessages('2',0,{ids:[701]});assert.equal(albumMessage.groupedId,'9223372036854775801');
  const actor=await api.resolvePeer('@actor');assert.equal(actor.id,'42');assert.equal(actor.user,true);const [service]=await api.getMessages('2',0,{ids:[700]});assert.equal(service.senderId,'2');assert.ok(service.service);assert.ok(service.text.includes('加入群组'));

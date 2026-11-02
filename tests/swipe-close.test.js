@@ -43,3 +43,10 @@ test('touch drag survives native pointer cancellation and closes only on finger 
  fire('pointercancel',20);fire('touchmove',100);assert.equal(closed,0);assert.equal(root.style.translate,'100px 0');
  fire('touchend',100);assert.equal(closed,1);assert.equal(root.style.translate,undefined);
 });
+
+test('compatibility mouse press cannot clear the guard after a touch dismissal',()=>{
+ const root=new EventTarget();let closed=0;root.style={removeProperty(key){delete this[key]}};root.getBoundingClientRect=()=>({width:240});installSwipeClose(root,{close:()=>closed++});
+ const fire=(type,x,touch=false)=>{const e=new Event(type,{cancelable:true});const t={identifier:1,clientX:x,clientY:20};Object.defineProperties(e,{pointerId:{value:1},pointerType:{value:touch?'touch':'mouse'},clientX:{value:x},clientY:{value:20},touches:{value:type==='touchend'?[]:[t]},changedTouches:{value:[t]},target:{value:{closest:()=>false}}});root.dispatchEvent(e);return e};
+ fire('touchstart',0,true);fire('touchmove',100,true);fire('touchend',100,true);assert.equal(closed,1);
+ fire('pointerdown',100);fire('pointerup',100);assert.equal(fire('click',100).defaultPrevented,true);assert.equal(closed,1);
+});

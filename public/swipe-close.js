@@ -1,7 +1,7 @@
 // One geometry read at gesture start; movement only updates compositor properties.
 export function installSwipeClose(events,{close,enabled=()=>true,getTarget=()=>events,onDrag=()=>{},onFinish=()=>{}}){
  let root=events;
- let start=null,suppressClick=false,settling=false;
+ let start=null,suppressClick=false,settling=false,compatUntil=0;
  const clear=()=>{root.style.removeProperty('translate');root.style.removeProperty('opacity');root.style.removeProperty('will-change');onFinish()};
  const settle=(dismiss,gesture)=>{
   settling=true;
@@ -16,6 +16,9 @@ export function installSwipeClose(events,{close,enabled=()=>true,getTarget=()=>e
  };
  const begin=e=>{
   if(settling)return;
+  // Some touch browsers synthesize a mouse press after touchend. It must not
+  // clear the click guard between the animation ending and the delayed click.
+  if(Date.now()<compatUntil&&(e.sourceCapabilities?.firesTouchEvents||!e.touch&&e.pointerType==='mouse'))return;
   suppressClick=false;
   if(!enabled(e)||e.isPrimary===false||e.button>0||e.target.closest('input,textarea,select,audio,video[controls],[contenteditable=true],[role=slider],.audio-disc,.info-tabs,.info-filter-menu,.seg,[data-swipe-ignore]'))return;
   root=getTarget();if(!root||(root.contains&&!root.contains(e.target)))return;
@@ -38,6 +41,7 @@ export function installSwipeClose(events,{close,enabled=()=>true,getTarget=()=>e
  const release=(e,cancelled=false)=>{
   if(!start||e.pointerId!==start.id)return;
   const gesture=start;start=null;
+  if(gesture.dragging&&e.touch)compatUntil=Date.now()+750;
   if(root.hasPointerCapture?.(e.pointerId))root.releasePointerCapture(e.pointerId);
   if(gesture.dragging)settle(!cancelled&&gesture.dx>=Math.min(96,gesture.width*.28),gesture);
  };
@@ -51,5 +55,7 @@ export function installSwipeClose(events,{close,enabled=()=>true,getTarget=()=>e
  events.addEventListener('touchstart',e=>{if(e.touches.length===1)begin(touchEvent(e,e.touches[0]));else if(start)release({pointerId:start.id},true)},{passive:true});
  events.addEventListener('touchmove',e=>{const touch=[...e.touches].find(t=>t.identifier===start?.id);if(touch)move(touchEvent(e,touch))},{passive:false});
  for(const type of ['touchend','touchcancel'])events.addEventListener(type,e=>{const touch=[...e.changedTouches].find(t=>t.identifier===start?.id);if(touch)release(touchEvent(e,touch),type==='touchcancel')},{passive:true});
+ // Capture is essential: the underlying list row must not receive a delayed
+ // touch click after the dismissed page has exposed it.
  events.addEventListener('click',e=>{if(suppressClick){suppressClick=false;e.preventDefault();e.stopImmediatePropagation()}},true);
 }

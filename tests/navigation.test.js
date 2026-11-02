@@ -69,3 +69,12 @@ test('conversation info is a third layer and preserves the chat parent on back a
  nav.goBack();assert.equal(view,'chat');pop({chat:true,from:'contacts'});nav.goBack();assert.equal(view,'contacts');
  pop({view:'info',from:'contacts'});assert.equal(view,'info');nav.goBack();assert.equal(view,'chat');nav.goBack();assert.equal(view,'contacts');
 });
+
+test('reload normalizes retained chat state and parent pop does not render twice',()=>{
+ const events={},stack=[{chat:true}];let index=0,listCalls=0,reopens=0;
+ const history={state:stack[0],scrollRestoration:'auto',replaceState(s){stack[index]=s;this.state=s},pushState(s){stack.splice(++index);stack[index]=s;this.state=s},back(){this.state=stack[--index];events.popstate({state:this.state})}};
+ const win={history,addEventListener:(name,fn)=>events[name]=fn};
+ const nav=installNavigation({win,onBackToList:()=>listCalls++,onReopen:()=>reopens++});
+ assert.equal(history.state,null);assert.equal(history.scrollRestoration,'manual');
+ nav.push();nav.goBack();assert.equal(index,0);assert.equal(listCalls,1);assert.equal(reopens,0);
+});

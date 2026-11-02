@@ -50,7 +50,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  `;
  let app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
  app=app.replace("'./telegram.js'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(adapter).toString('base64')));
- for(const file of ['round-scrollbar.js','folder-pages.js','filter-cycle.js','folder-ui.js','poll.js','message-albums.js','video-avatar.js','chat-membership.js','profile-stories.js','button-label.js','telegram-links.js','service-message.js','audio-player.js','video-policy.js','media-viewer.js','page-gestures.js','swipe-close.js','cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
+ for(const file of ['connection-latency.js','context-menu.js','composer-layout.js','round-scrollbar.js','folder-pages.js','filter-cycle.js','folder-ui.js','poll.js','message-albums.js','video-avatar.js','chat-membership.js','profile-stories.js','button-label.js','telegram-links.js','service-message.js','audio-player.js','video-policy.js','media-viewer.js','page-gestures.js','swipe-close.js','cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
  app=app.replace("'pako'",JSON.stringify(import.meta.resolve('pako')));
  app=app.replace("'qrcode'",JSON.stringify(import.meta.resolve('qrcode')));
  try{
@@ -151,8 +151,10 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
 
   // Real-time delivery updates the open topic without issuing a history request.
   const unchangedRow=document.querySelector('[data-message-id="101"]');const unchangedDialog=document.querySelector('[data-chat-id="-2000"]');const unchangedAvatar=unchangedDialog.querySelector('.avatar');const before=globalThis.uiCalls.length;const live={id:153,text:'即时收到',date:1,out:false,channel:true};
+  const chatPane=document.querySelector('.conversation');Object.defineProperties(chatPane,{scrollHeight:{value:1000,configurable:true},clientHeight:{value:100,configurable:true}});chatPane.scrollTop=800;
   globalThis.receiveLive({kind:'message',chat:'-1001',topic:42,message:live});await new Promise(r=>setImmediate(r));
   assert.ok(document.querySelector('[data-message-id="153"]').textContent.includes('即时收到'));assert.equal(globalThis.uiCalls.length,before);assert.equal(document.querySelector('[data-message-id="101"]'),unchangedRow);assert.equal(document.querySelector('[data-chat-id="-2000"]'),unchangedDialog);assert.equal(unchangedDialog.querySelector('.avatar'),unchangedAvatar);
+  assert.equal(chatPane.scrollTop,800);assert.equal(document.querySelector('.jump-unread').textContent,'1');assert.equal(document.querySelector('#jumpToBottom').hidden,false);
   globalThis.receiveLive({kind:'message',chat:'-1001',topic:42,message:live});await new Promise(r=>setImmediate(r));assert.equal(document.querySelectorAll('[data-message-id="153"]').length,1);
   globalThis.receiveLive({kind:'edit',chat:'-1001',topic:42,message:{...live,text:'实时编辑'}});await new Promise(r=>setImmediate(r));assert.ok(document.querySelector('[data-message-id="153"]').textContent.includes('实时编辑'));
   globalThis.receiveLive({kind:'message',chat:'-2000',topic:0,message:{id:200,text:'后台会话',date:2,out:false}});await new Promise(r=>setImmediate(r));
@@ -257,6 +259,21 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   document.querySelector('#closeViewer').onclick();document.querySelector('.info-back').onclick();assert.equal(document.body.classList.contains('info-open'),false);
   document.querySelector('#chatIdentity').onclick();for(let i=0;i<30;i++)await new Promise(r=>setImmediate(r));
   assert.equal(document.body.classList.contains('info-open'),true);assert.equal(document.querySelector('.info-name').textContent,'Actor Alice');document.querySelector('.info-back').onclick();strangerLink.remove();
+  // Watch document scrolling must stay on the list after exit, including live
+  // updates, and resume the chat position on an intentional reopen.
+  window.innerWidth=216;window.innerHeight=216;
+  await document.querySelector('#dialogs [data-chat-id="-1001"]').onclick();
+  const watchDocument=document.scrollingElement||document.documentElement;watchDocument.scrollTop=777;
+  swipeBack('main');assert.equal(document.body.classList.contains('chat-open'),false);
+  const listPosition=watchDocument.scrollTop;
+  globalThis.receiveLive({kind:'message',chat:'-1001',topic:0,message:{id:9999,text:'arrived after exit',date:3,out:false}});await new Promise(r=>setImmediate(r));
+  assert.equal(document.body.classList.contains('chat-open'),false);assert.equal(watchDocument.scrollTop,listPosition);
+  await document.querySelector('#dialogs [data-chat-id="-1001"]').onclick();assert.equal(watchDocument.scrollTop,777);
+  for(const [width,height,top]of [[390,780,444],[1024,768,555]]){
+   window.innerWidth=width;window.innerHeight=height;const pane=document.querySelector('.conversation');pane.scrollTop=top;
+   document.querySelector('#back').onclick();assert.equal(document.body.classList.contains('chat-open'),false);
+   await document.querySelector('#dialogs [data-chat-id="-1001"]').onclick();assert.equal(pane.scrollTop,top);
+  }
  }finally{globalThis.setInterval=originalInterval}
 });
 

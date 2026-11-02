@@ -3,6 +3,9 @@
 export function installNavigation({win=window,onBackToList,onReopen,onContacts,onMe,onInfo}={}){
  const nav=win.history;
  const can=!!(nav&&typeof nav.pushState==='function'&&typeof nav.back==='function');
+ // The app boots onto the list, even when a reload retained a chat history
+ // entry. Leaving it as {chat:true} would make the next Back reopen that chat.
+ if(can){try{nav.scrollRestoration='manual';nav.replaceState?.(null,'')}catch{}}
  let current='list',chatParent='list';
  const show=state=>{
   if(state?.view==='info'){current='info';chatParent=['contacts','me'].includes(state.from)?state.from:'list';onInfo?.()}
@@ -25,7 +28,11 @@ export function installNavigation({win=window,onBackToList,onReopen,onContacts,o
   show(parent==='chat'?{chat:true,from:chatParent}:parent==='contacts'||parent==='me'?{view:parent}:null);
   if(had&&can){try{nav.back()}catch{}}
  };
- const onPop=e=>show(e.state);
+ const onPop=e=>{
+  const target=e.state?.view==='info'?'info':e.state?.chat?'chat':['contacts','me'].includes(e.state?.view)?e.state.view:'list';
+  if(target===current)return; // goBack already rendered this parent synchronously.
+  show(e.state);
+ };
  if(can)win.addEventListener('popstate',onPop);
  return {push,goBack};
 }

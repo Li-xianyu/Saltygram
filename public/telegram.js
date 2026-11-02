@@ -523,3 +523,39 @@ export async function saveDialogFolder(data){
 }
 export async function deleteDialogFolder(id){const c=await getClient();if(!await c.invoke(new Api.messages.UpdateDialogFilter({id})))throw Error('删除失败');if(c!==client)throw Error('账号已切换');return getDialogFolders()}
 export async function reorderDialogFolders(ids){const c=await getClient();if(!folderStates.has(c))await getDialogFolders();const all=folderStates.get(c),order=all.map(f=>f.className==='DialogFilterDefault'?0:ids.shift());if(c!==client)throw Error('账号已切换');if(!await c.invoke(new Api.messages.UpdateDialogFiltersOrder({order})))throw Error('排序失败');if(c!==client)throw Error('账号已切换');return getDialogFolders()}
+
+export async function setConversationPinned(id,pinned,{filterId=0}={}){
+ const {c,peer}=await readyPeer(id);
+ if(!filterId){
+  const result=await c.invoke(new Api.messages.ToggleDialogPin({peer:new Api.InputDialogPeer({peer}),pinned:!!pinned}));
+  if(c!==client)throw Error('账号已切换');if(!result)throw Error('置顶操作失败');return {pinned:!!pinned};
+ }
+ await getDialogFolders();if(c!==client)throw Error('账号已切换');
+ const old=folderStates.get(c)?.find(f=>f.id===filterId);if(!old)throw Error('分组已被删除，请刷新');
+ const same=p=>utils.getPeerId(p).toString()===id;
+ const pinnedPeers=(old.pinnedPeers||[]).filter(p=>!same(p));
+ const includePeers=(old.includePeers||[]).filter(p=>!same(p));
+ if(pinned)pinnedPeers.unshift(peer);else includePeers.push(peer);
+ const filter=new (old.className==='DialogFilterChatlist'?Api.DialogFilterChatlist:Api.DialogFilter)({...old,pinnedPeers,includePeers});
+ if(!await c.invoke(new Api.messages.UpdateDialogFilter({id:filterId,filter})))throw Error('置顶操作失败');
+ if(c!==client)throw Error('账号已切换');return {folders:await getDialogFolders()};
+}
+
+const latencyProbes=new WeakMap();
+export function measureConnectionLatency(){
+ const c=client;if(!c?.connected)return Promise.reject(Error('连接未就绪'));
+ const pending=latencyProbes.get(c);if(pending)return pending;
+ const pingId=bigInt(Date.now()).multiply(65536).add(Math.floor(Math.random()*65536));
+ const started=performance.now();let timer;
+ const request=c.invoke(new Api.Ping({pingId})).then(result=>{
+  if(c!==client)throw Error('账号已切换');
+  if(result.className!=='Pong'||result.pingId?.toString()!==pingId.toString())throw Error('无效的延迟响应');
+  return Math.max(1,Math.round(performance.now()-started));
+ });
+ const probe=Promise.race([request,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('延迟测量超时')),8000)})]).finally(()=>clearTimeout(timer));
+ latencyProbes.set(c,probe);
+ // A timeout does not cancel an MTProto request. Keep the single-flight lock
+ // until the real request settles, so repeated UI retries cannot stack pings.
+ const release=()=>{if(latencyProbes.get(c)===probe)latencyProbes.delete(c)};request.then(release,release);
+ return probe;
+}
