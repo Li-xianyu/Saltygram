@@ -5,44 +5,91 @@ export function arcScrollMetrics(top,total,viewport){
 }
 
 export function installRoundScrollbar({win=window,doc=document}={}){
- const overlay=doc.createElement('div');overlay.id='roundScrollbar';overlay.setAttribute('aria-hidden','true');overlay.setAttribute('popover','manual');
- overlay.innerHTML='<svg viewBox="0 0 100 100" fill="none" aria-hidden="true"><g transform="rotate(-45 50 50)" stroke="currentColor" stroke-linecap="round"><circle class="round-scroll-track" cx="50" cy="50" r="48" pathLength="100" stroke-dasharray="25 75"/><circle class="round-scroll-thumb" cx="50" cy="50" r="48" pathLength="100"/></g></svg>';
- doc.body.append(overlay);const thumb=overlay.querySelector('.round-scroll-thumb');
- let queued=false,timer,scroller,last='',shown=false;
- const watch=()=>win.innerWidth<=480&&win.innerHeight<=540&&!doc.hidden;
+ let overlay,thumb,active=false,disposed=false,frame=null,timer=null,scroller=null;
+ let shown=false,lastLength='',lastOffset='',deadline=0,raise=false,observer,resize;
+ const tracked=new Set(),opened=new Map();let serial=0;
+ const now=()=>win.performance?.now?.()??Date.now();
  const base=()=>doc.scrollingElement||doc.documentElement;
+ const small=()=>win.innerWidth<=480&&win.innerHeight<=540&&!doc.hidden;
+ const panels=['visualPage','settingsPage','conversationMenu','menuPanel'];
+ function create(){
+  if(overlay)return;
+  overlay=doc.createElement('div');overlay.id='roundScrollbar';overlay.setAttribute('aria-hidden','true');overlay.setAttribute('popover','manual');
+  overlay.innerHTML='<svg viewBox="0 0 100 100" fill="none" aria-hidden="true"><g transform="rotate(-45 50 50)" stroke="currentColor" stroke-linecap="round"><circle class="round-scroll-track" cx="50" cy="50" r="48" pathLength="100" stroke-dasharray="25 75"/><circle class="round-scroll-thumb" cx="50" cy="50" r="48" pathLength="100"/></g></svg>';
+  doc.body.append(overlay);thumb=overlay.querySelector('.round-scroll-thumb');
+ }
  function surface(){
-  const dialogs=[...doc.querySelectorAll('dialog[open]')];if(dialogs.length)return dialogs.at(-1);
-  for(const id of ['visualPage','settingsPage','conversationMenu','menuPanel']){const el=doc.getElementById(id);if(el&&!el.hidden&&el.scrollHeight>el.clientHeight+1)return el}
+  const dialogs=[...doc.querySelectorAll('dialog[open]')];
+  if(dialogs.length)return dialogs.sort((a,b)=>(opened.get(a)||0)-(opened.get(b)||0)).at(-1);
+  // A non-scrolling foreground panel must not expose the document's progress.
+  for(const id of panels){const el=doc.getElementById(id);if(el&&!el.hidden)return el}
   return base();
  }
- function hide(){overlay.classList.remove('visible');shown=false}
- function draw(){
-  queued=false;if(!watch()){hide();return}
-  const target=scroller||surface(),documentScroll=target===base();
-  // These three native scroll metrics share layout units even with CSS zoom.
-  const viewport=target.clientHeight||(documentScroll?win.innerHeight:0);
-  const total=target.scrollHeight;
-  const top=target.scrollTop||0;
-  const metrics=arcScrollMetrics(top,total,viewport);if(!metrics){hide();return}
-  const key=metrics.length.toFixed(3)+':'+metrics.offset.toFixed(3);
-  if(key!==last){last=key;thumb.setAttribute('stroke-dasharray',`${metrics.length} ${100-metrics.length}`);thumb.setAttribute('stroke-dashoffset',String(metrics.offset))}
-  if(!shown){try{overlay.hidePopover()}catch{}try{overlay.showPopover()}catch{}overlay.classList.add('visible');shown=true}
-  win.clearTimeout(timer);timer=win.setTimeout(hide,1200);timer?.unref?.();
+ function hide(){if(shown){overlay.classList.remove('visible');shown=false}if(timer!==null){win.clearTimeout(timer);timer=null}}
+ function expire(){timer=null;if(!active)return;const remaining=deadline-now();if(remaining>0){timer=win.setTimeout(expire,remaining);timer?.unref?.()}else hide()}
+ function reveal(){
+  if(!shown||raise){try{overlay.hidePopover()}catch{}try{overlay.showPopover()}catch{}raise=false}
+  if(!shown){overlay.classList.add('visible');shown=true}
+  deadline=now()+1200;
+  // One outstanding timer; sustained scrolling only extends its deadline.
+  if(timer===null){timer=win.setTimeout(expire,1200);timer?.unref?.()}
  }
- function schedule(){if(!watch()){hide();return}if(queued)return;queued=true;if(win.requestAnimationFrame)win.requestAnimationFrame(draw);else queueMicrotask(draw)}
- const onScroll=e=>{
+ function draw(){
+  frame=null;if(!active||disposed)return;
+  const target=scroller||surface();
+  // All layout reads precede SVG/class writes, once per animation frame.
+  const viewport=target.clientHeight||(target===base()?win.innerHeight:0);
+  const metrics=arcScrollMetrics(target.scrollTop||0,target.scrollHeight,viewport);
+  if(!metrics){hide();return}
+  const length=metrics.length.toFixed(3),offset=metrics.offset.toFixed(3);
+  if(length!==lastLength){lastLength=length;thumb.setAttribute('stroke-dasharray',`${length} ${100-Number(length)}`)}
+  if(offset!==lastOffset){lastOffset=offset;thumb.setAttribute('stroke-dashoffset',offset)}
+  reveal();
+ }
+ function schedule(){if(!active||disposed||frame!==null)return;frame=win.requestAnimationFrame(draw)}
+ function onScroll(e){
   const target=e.target===doc||e.target===win?base():e.target;
-  if(!target||overlay.contains(target)||target.scrollHeight<=target.clientHeight+1)return;
-  scroller=target;schedule();
- };
- doc.addEventListener('scroll',onScroll,{capture:true,passive:true});
- const reset=()=>{scroller=null;last='';schedule()};
- win.addEventListener('resize',reset,{passive:true});doc.addEventListener('visibilitychange',reset);
- const observer=win.MutationObserver?new win.MutationObserver(records=>{
-  if(records.some(r=>!overlay.contains(r.target)&&(r.type==='childList'||r.target===doc.body||r.target.matches?.('dialog,.page-overlay,#menuPanel,#conversationMenu'))))reset();
- }):null;
- observer?.observe(doc.body,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','open','class']});
- const resize=win.ResizeObserver?new win.ResizeObserver(schedule):null;resize?.observe(doc.body);
- schedule();return ()=>{observer?.disconnect();resize?.disconnect();win.clearTimeout(timer);doc.removeEventListener('scroll',onScroll,true);win.removeEventListener('resize',reset);doc.removeEventListener('visibilitychange',reset);overlay.remove()};
+  // No layout reads here. Horizontal tab strips and inner text controls do not
+  // own the page indicator; only its selected vertical scrolling surface does.
+  if(target!==(scroller||base()))return;
+  schedule();
+ }
+ function reset(){
+  if(!active)return;const next=surface();
+  if(next!==scroller){scroller=next;resize?.disconnect();resize?.observe(next===base()?doc.body:next)}
+  raise=true;schedule();
+ }
+ function trackPanels(){
+  for(const el of [...doc.querySelectorAll('dialog'),...panels.map(id=>doc.getElementById(id)).filter(Boolean)]){
+   if(tracked.has(el))continue;tracked.add(el);observer?.observe(el,{attributes:true,attributeFilter:['open','hidden']});if(el.open)opened.set(el,++serial);
+  }
+  for(const el of tracked)if(!el.isConnected){tracked.delete(el);opened.delete(el)}
+ }
+ function mutations(records){
+  let changed=false,added=false;
+  for(const r of records){
+   if(r.type==='childList'){
+    // Direct children only: new dialogs/overlays, never message/avatar subtrees.
+    if([...r.addedNodes,...r.removedNodes].some(n=>n.nodeType===1&&n!==overlay&&n.matches?.('dialog,.page-overlay'))){added=true;changed=true}
+   }else{changed=true;if(r.attributeName==='open'){if(r.target.open)opened.set(r.target,++serial);else opened.delete(r.target)}}
+  }
+  if(added)trackPanels();if(changed)reset();
+ }
+ function stop(){
+  active=false;doc.removeEventListener('scroll',onScroll,true);observer?.disconnect();resize?.disconnect();tracked.clear();opened.clear();
+  if(frame!==null){win.cancelAnimationFrame(frame);frame=null}hide();try{overlay?.hidePopover()}catch{}scroller=null;
+ }
+ function sync(){
+  if(disposed)return;
+  if(!small()){if(active)stop();return}
+  if(!active){
+   create();active=true;doc.addEventListener('scroll',onScroll,{capture:true,passive:true});
+   observer ||= win.MutationObserver?new win.MutationObserver(mutations):null;
+   resize ||= win.ResizeObserver?new win.ResizeObserver(schedule):null;
+   observer?.observe(doc.body,{childList:true,attributes:true,attributeFilter:['class']});trackPanels();
+  }
+  reset();
+ }
+ win.addEventListener('resize',sync,{passive:true});doc.addEventListener('visibilitychange',sync);sync();
+ return ()=>{disposed=true;stop();win.removeEventListener('resize',sync);doc.removeEventListener('visibilitychange',sync);overlay?.remove()};
 }
