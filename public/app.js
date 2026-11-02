@@ -1,3 +1,7 @@
+import {installFilterCycle} from './filter-cycle.js';
+import {installRoundScrollbar} from './round-scrollbar.js';
+import {createFolderPages} from './folder-pages.js';
+import {createFolderUI} from './folder-ui.js';
 import {createPollCard} from './poll.js';
 import {messageAlbums} from './message-albums.js';
 import {createVideoAvatar} from './video-avatar.js';
@@ -27,6 +31,7 @@ import { createConversationInfo, conversationStatus } from './conversation-info.
 import { installRoundPreview } from './round-preview.js';
 import { createGalleryTile } from './gallery-tile.js';
 installRoundPreview();
+installRoundScrollbar();
 const resources=createResourceLoader(4);
 const mediaDownloads=createResourceLoader(2);
 const avatarResources=createResourceLoader(4);
@@ -62,10 +67,13 @@ if(path==='/auth/login')return telegram.login(body);
 if(path==='/logout')return telegram.logout();
 if(path.startsWith('/messages/'))return body?telegram.sendMessage(path.slice(10),body.text,activeTopic):telegram.getMessages(path.slice(10),activeTopic);
 throw Error('未知操作');}
+const readyAvatarImages=new Map();
 function avatar(el,d){
  el.textContent=d.title.slice(0,1);el.dataset.peer=d.id;const identity=d.id+':'+(d.avatarKey||'');el.dataset.avatarIdentity=identity;
  if(!d.avatarKey)return;
- el.loadResource=async()=>{try{const key='avatar:'+d.id+':'+d.avatarKey,small=watchDocumentScroll();const url=await avatarResources.load(key+(small?':64':''),async()=>{const original=()=>cachedBlob(key,()=>telegram.downloadAvatar(d.id));const blob=small?await cachedBlob(key+':64',async()=>avatarThumbnail(await original())):await original();return blob?resourceURL(blob):null});if(!url||!el.isConnected||el.dataset.avatarIdentity!==identity)return;const img=document.createElement('img');img.src=url;img.alt='';img.onerror=()=>{if(el.dataset.avatarIdentity===identity)el.textContent=d.title.slice(0,1)};const moving=el.querySelector('.profile-video-avatar');el.replaceChildren(img);if(moving)el.append(moving)}catch{ /* Initial remains visible if Telegram denies access. */ }};
+ const small=watchDocumentScroll(),owner=telegram.cacheScope(),readyKey=owner+':'+identity+(small?':64':'');
+ const ready=readyAvatarImages.get(readyKey);if(ready){el.replaceChildren(ready.cloneNode(true));el.loadResource=null;return}
+ el.loadResource=async()=>{try{const key='avatar:'+d.id+':'+d.avatarKey;const url=await avatarResources.load(owner+':'+key+(small?':64':''),async()=>{const original=()=>cachedBlob(key,()=>telegram.downloadAvatar(d.id));const blob=small?await cachedBlob(key+':64',async()=>avatarThumbnail(await original())):await original();return blob?resourceURL(blob):null});if(!url||!el.isConnected||el.dataset.avatarIdentity!==identity||owner!==telegram.cacheScope())return;if(el.querySelector('img')?.src===url)return;const img=document.createElement('img');img.src=url;img.alt='';img.onload=()=>{readyAvatarImages.set(readyKey,img);if(readyAvatarImages.size>256)readyAvatarImages.delete(readyAvatarImages.keys().next().value)};img.onerror=()=>{readyAvatarImages.delete(readyKey);if(el.dataset.avatarIdentity===identity)el.textContent=d.title.slice(0,1)};const moving=el.querySelector('.profile-video-avatar');el.replaceChildren(img);if(moving)el.append(moving)}catch{ /* Initial remains visible if Telegram denies access. */ }};
  visibleResources.observe(el);
 }
 function time(date){return new Date(date*1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}
@@ -73,9 +81,11 @@ const roundDialogList=installRoundList($('#dialogs'),{isVisible:()=>!document.bo
 const roundContactList=installRoundList($('#contactsView'),{isVisible:()=>document.body.classList.contains('nav-contacts')});
 const updateContactList=createDialogList($('#contactsView'),{isVisible:()=>!document.hidden&&document.body.classList.contains('nav-contacts'),select:selectContact,avatar,formatTime:time,sort:list=>list,emptyText:'暂无联系人',observeAvatar:el=>visibleResources.observe(el),releaseAvatar:el=>visibleResources.unobserve(el)});
 const updateDialogList=createDialogList($('#dialogs'),{animate:()=>!watchDocumentScroll(),getScroller:()=>watchDocumentScroll()?(document.scrollingElement||document.documentElement):$('#dialogs'),getZoom:()=>visualSettings.scale||1,isVisible:()=>!document.hidden&&!document.body.classList.contains('nav-contacts')&&!document.body.classList.contains('nav-me')&&(!document.body.classList.contains('chat-open')||window.innerWidth>700),select,contextMenu:(id,event,row)=>openConversationMenu(id,event,row),avatar,formatTime:time,observeAvatar:el=>visibleResources.observe(el),releaseAvatar:el=>visibleResources.unobserve(el)});
+const swipePages=createFolderPages({root:$('#dialogs'),avatar,formatTime:time,getOptions:()=>({active,tab,query:$('#search').value,connected})});
+const folderUI=createFolderUI({api:telegram,host:document.querySelector('.tabs'),swipeRoot:$('#dialogs'),swipePages,getDialogs:()=>dialogs,onChange:()=>renderDialogs(),cacheGet:snapshotGet,cachePut:snapshotPut,scope:()=>telegram.cacheScope(),toast,getScale:()=>visualSettings.scale||1});
 function renderDialogs(){
  dialogs=orderDialogs(dialogs);
- updateDialogList(dialogs,{active,tab,query:$('#search').value,connected});
+ updateDialogList(folderUI.filter(dialogs),{active,tab,viewKey:folderUI.key(),query:$('#search').value,connected});
  roundDialogList.refresh();
  const count=String(dialogs.length),unread=String(dialogs.filter(d=>d.unread||d.unreadMark).length||'');if($('#count').textContent!==count)$('#count').textContent=count;if($('#unread').textContent!==unread)$('#unread').textContent=unread;
 }
@@ -239,7 +249,7 @@ async function jumpToMessage(chat,id){
  if(row){row.scrollIntoView?.({block:'center',behavior:'smooth'});row.classList.add('message-highlight');setTimeout(()=>row.classList.remove('message-highlight'),1600)}else toast('原消息已删除或不可访问');
 }
 $('#search').oninput=()=>{if(document.body.classList.contains('nav-contacts'))renderContacts();else renderDialogs()};$('#searchButton').onclick=()=>{switchNav('chat');const s=$('.search');s.hidden=false;$('#search').focus()};$('#searchClose').onclick=()=>{$('.search').hidden=true;$('#search').value='';renderDialogs()};
-for(const b of document.querySelectorAll('[data-tab]'))b.onclick=()=>{tab=b.dataset.tab;document.querySelector('.tabs .selected')?.classList.remove('selected');b.classList.add('selected');renderDialogs()};
+installFilterCycle($('#dialogFilterCycle'),value=>{tab=value;renderDialogs()});
 $('#theme').onclick=()=>{document.body.classList.toggle('dark');localStorage.setItem('xy-theme',document.body.classList.contains('dark')?'dark':'light')};if(localStorage.getItem('xy-theme')==='dark')document.body.classList.add('dark');
 $('#back').onclick=()=>nav.goBack();
 $('#emoji').onclick=()=>{$('#message').value+=' 😊';$('#message').focus()};
@@ -473,6 +483,7 @@ function openVisual(){
 function closeSettings(){$('#settingsPage').hidden=true;document.body.classList.remove('no-scroll');refreshFullscreenRounds()}
 $('#settingsBack').onclick=closeSettings;
 $('#settingsVisual').onclick=openVisual;
+$('#settingsFolders').onclick=()=>folderUI.open();
 function closeVisual(){$('#visualPage').hidden=true;refreshFullscreenRounds()}
 $('#visualBack').onclick=closeVisual;
 $('#fontSizeSlider').oninput=e=>{visualSettings.fontSize=Number(e.target.value);$('#fontSizeValue').textContent=visualSettings.fontSize;applyVisualSettings();persistVisualSettings()};
@@ -497,6 +508,7 @@ if(matchMedia('(pointer: coarse)').matches){
 $('#closeLogin').onclick=()=>$('#login').close();
 $('#authForm').onsubmit=async e=>{e.preventDefault();const b=$('#authSubmit');b.disabled=true;$('#authError').textContent='';try{const value=$('#authInput').value.trim();if(phase==='phone'){await telegram.configure($('#apiId').value.trim(),$('#apiHash').value.trim(),$('#remember').checked);const data=await api('/auth/code',{phone:value.replace(/\s/g,'')});phase='code';$('#credentials').hidden=true;$('#authLabel').textContent='登录验证码';$('#authHint').textContent=data.viaApp?'请查看 Telegram 官方会话中的验证码。':'请查看 Telegram 或短信中的验证码。';$('#authInput').value='';$('#authInput').type='text';$('#authInput').placeholder='输入验证码';b.textContent='登录'}else{const result=await api('/auth/login',phase==='password'?{password:$('#authInput').value}:{code:value});if(result.passwordRequired){phase='password';$('#authLabel').textContent='两步验证密码';$('#authHint').textContent='你的账号开启了两步验证，请输入密码。';$('#authInput').value='';$('#authInput').type='password';$('#authInput').placeholder='输入两步验证密码'}else{await loadReal();$('#login').close()}}}catch(e){$('#authError').textContent=e.message}finally{b.disabled=false}};
 async function loadReal(){
+ void folderUI.refresh();
  const cached=await snapshotGet('dialogs');connected=true;document.body.classList.add('connected');setStatus('online');void refreshAccountViews();
  if(!active){updateStartPage();$('#emptyState').hidden=false}
  if(cached&&!dialogs.length){dialogs=cached;renderDialogs()}
@@ -619,7 +631,7 @@ function updateStartPage(){const available=connected||dialogs.length>0;document.
 $('#emptyConnect').onclick=openLogin;
 renderDialogs();
 async function bootstrap(){
- restoring=!!telegram.settings().session;updateStartPage();void refreshAccountViews();
+ void folderUI.restore();restoring=!!telegram.settings().session;updateStartPage();void refreshAccountViews();
  const cached=await snapshotGet('dialogs');if(cached){dialogs=cached;renderDialogs();setStatus('connecting');updateStartPage()}
  try{if(await telegram.restore())await loadReal();else if(cached){dialogs=[];history={};active='';document.body.classList.remove('has-chat','chat-open');renderDialogs();setStatus('offline')}}catch(e){setStatus('offline');toast('网络同步失败：'+(e.errorMessage||e.message))}finally{restoring=false;updateStartPage();if(document.body.classList.contains('nav-me'))renderMe()}
 }
@@ -760,6 +772,7 @@ const TYPING_LABELS={'SendMessageTypingAction':'正在输入','SendMessageRecord
 function refreshChatStatus(){const d=dialogs.find(d=>d.id===active);if(d)$('#chatStatus').textContent=d.group?'群组':d.channel?'频道':conversationStatus(d)}
 function setTypingStatus(text){$('#chatStatus').textContent=text;clearTimeout(typingTimer);typingTimer=setTimeout(refreshChatStatus,5000)}
 function receiveUpdate(event){
+ if(event.kind==='folders'){void folderUI.refresh();return}
  if(event.kind==='typing'){if(event.chat===active){const name=event.user?((dialogs.find(d=>d.id===event.user)||{}).title||'有人'):'对方';setTypingStatus(name+' '+(TYPING_LABELS[event.action]||'正在输入')+'…')}return}
  if(event.kind==='connection'){if(connected){setStatus(event.online?'online':'connecting');if(event.online)requestRecovery()}return}
  if(event.kind==='sync'){requestRecovery();return}

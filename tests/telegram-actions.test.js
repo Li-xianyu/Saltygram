@@ -18,6 +18,8 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  async deleteMessages(peer,ids,options){globalThis.adapterCalls.push({method:'delete',ids,options})}
  async markAsRead(peer,message,options){globalThis.adapterCalls.push({method:'read',options})}
  async invoke(req){globalThis.adapterCalls.push({method:req.className,req});
+ if(req.className==='messages.GetDialogFilters')return {filters:[new Api.DialogFilterDefault(),new Api.DialogFilter({id:2,title:new Api.TextWithEntities({text:'Friends',entities:[]}),contacts:true,pinnedPeers:[],includePeers:[],excludePeers:[]})]};
+ if(['messages.UpdateDialogFilter','messages.UpdateDialogFiltersOrder'].includes(req.className))return true;
  if(req.className==='messages.SendVote')return {updates:[{className:'UpdateMessagePoll',pollId:123,results:{totalVoters:req.options.length,results:req.options.map(option=>({option,voters:1,chosen:true}))}}]};
  if(req.className==='users.GetFullUser')return {fullUser:{about:'My bio',profilePhoto:{id:88,videoSizes:[{className:'VideoSize',w:160,h:160,type:'u'},{className:'VideoSize',w:640,h:640,type:'v'}]},botInfo:{commands:[{command:'help',description:'Help'}]}},users:[]};
  if(req.className==='stories.GetPeerStories')return {stories:{stories:[{className:'StoryItem',id:12,date:1,media:{photo:{id:99,sizes:[]}}}]},users:[],chats:[]};
@@ -44,6 +46,7 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  source=source.replace("'./story-requests.js'",JSON.stringify(new URL('../public/story-requests.js',import.meta.url).href));
  source=source.replace("'./mtproto-compat.js'",JSON.stringify(new URL('../public/mtproto-compat.js',import.meta.url).href));
  const api=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+ const folders=await api.getDialogFolders();assert.equal(folders[0].title,'Friends');await api.saveDialogFolder({...folders[0],title:'Friends2'});const savedFolder=globalThis.adapterCalls.find(c=>c.method==='messages.UpdateDialogFilter').req;assert.equal(savedFolder.filter.contacts,true);assert.equal(savedFolder.filter.title.text,'Friends2');await api.reorderDialogFolders([2]);assert.deepEqual(globalThis.adapterCalls.find(c=>c.method==='messages.UpdateDialogFiltersOrder').req.order,[0,2]);await api.deleteDialogFolder(2);assert.equal(globalThis.adapterCalls.filter(c=>c.method==='messages.UpdateDialogFilter').at(-1).req.filter,undefined);
  const own=await api.getOwnProfile();assert.deepEqual(own,{id:'1',title:'Owner',username:'owner',about:'My bio',phone:'123',avatarKey:'8'});
  const {extensions}=await import('telegram');const {ConnectionTCPObfuscated}=await import('telegram/network/index.js');
  assert.equal(globalThis.adapterOptions.networkSocket,extensions.PromisedWebSockets);

@@ -24,9 +24,9 @@ export function createDialogList(root,{select,contextMenu,avatar,observeAvatar=(
  const release=e=>{if(!held&&!touching)return;if(e.type.startsWith('pointer')&&touching)return;if(e.touches?.length)return;touching=held=false;scrolling=true;settle()};
  for(const event of ['pointerup','pointercancel','touchend','touchcancel'])win.addEventListener(event,release,{passive:true,capture:true});
  return update;
- function update(dialogs,{active='',tab='all',query='',connected=false}={}){
-  lastData=dialogs;lastOptions={active,tab,query,connected};
-  const nextView=tab+'\n'+query,sameView=view===nextView,scroller=getScroller(),oldScroll=scroller.scrollTop||0;
+ function update(dialogs,{active='',tab='all',query='',connected=false,viewKey=''}={}){
+  lastData=dialogs;lastOptions={active,tab,query,connected,viewKey};
+  const nextView=viewKey+'\n'+tab+'\n'+query,sameView=view===nextView,scroller=getScroller(),oldScroll=scroller.scrollTop||0;
   const oldNodes=[...root.children],existingOrder=new Map(oldNodes.map((node,i)=>[node.dataset.chatId,i]));
   let ordered=sort(dialogs).filter(d=>matchesDialog(d,tab,query));
   if(sameView&&(held||scrolling))ordered=ordered.map((d,i)=>({d,rank:existingOrder.get(d.id)??oldNodes.length+i})).sort((a,b)=>a.rank-b.rank).map(x=>x.d);

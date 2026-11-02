@@ -105,8 +105,8 @@ export async function abortQrLogin(){if(client){try{await client.disconnect()}ca
 let dialogsLoading;
 export function getDialogs(){return dialogsLoading ||= fetchDialogs().finally(()=>dialogsLoading=null)}
 async function fetchDialogs() {
-  const c = await getClient(); const dialogs = await c.getDialogs({ limit: 80 });
-  return dialogs.map((d,index) => { const id = d.id.toString(); peers.set(id, d.inputEntity); entities.set(id,d.entity); const photo=d.entity?.photo; return { id, pinned:!!d.dialog.pinned, pinOrder:d.dialog.pinned?index:null, folderId:d.dialog.folderId||0, avatarKey: photo?.photoId?.toString() || '', title: d.title || '未命名', lastMessageId:d.message?.id, unread: d.unreadCount || 0, unreadMark:!!d.dialog.unreadMark, text: d.message?.message || serviceMessage(d.message?.action,{actor:displayName(d.message?.sender)})?.text || (d.message?.media ? ({image:'图片',video:'视频',audio:'音频',sticker:'贴纸',file:'文件'}[mediaInfo(d.message)?.kind]||'媒体') : ''), date: d.message?.date, personal: !!d.isUser&&!d.entity?.bot&&!d.entity?.self&&id!==memory.owner, bot:!!d.entity?.bot, group: d.isGroup, channel: d.isChannel, forum: !!d.entity?.forum, readState:{inbox:d.dialog.readInboxMaxId||0,outbox:d.dialog.readOutboxMaxId||0,unread:d.unreadCount||0,broadcast:!!d.entity?.broadcast,saved:id===memory.owner}, online:!!d.entity?.status&&d.entity.status.className==='UserStatusOnline'&&(!d.entity.status.expires||d.entity.status.expires>Date.now()/1000), status:d.entity?.status?{type:d.entity.status.className,wasOnline:d.entity.status.wasOnline,expires:d.entity.status.expires}:null }; });
+  const c = await getClient(); const dialogs = await c.getDialogs({ limit: undefined });
+  return dialogs.map((d,index) => { const id = d.id.toString(); peers.set(id, d.inputEntity); entities.set(id,d.entity); const photo=d.entity?.photo; return { id, pinned:!!d.dialog.pinned, pinOrder:d.dialog.pinned?index:null, folderId:d.dialog.folderId||0, contact:!!d.entity?.contact, mutedUntil:d.dialog.notifySettings?.muteUntil||0, avatarKey: photo?.photoId?.toString() || '', title: d.title || '未命名', lastMessageId:d.message?.id, unread: d.unreadCount || 0, unreadMark:!!d.dialog.unreadMark, text: d.message?.message || serviceMessage(d.message?.action,{actor:displayName(d.message?.sender)})?.text || (d.message?.media ? ({image:'图片',video:'视频',audio:'音频',sticker:'贴纸',file:'文件'}[mediaInfo(d.message)?.kind]||'媒体') : ''), date: d.message?.date, personal: !!d.isUser&&!d.entity?.bot&&!d.entity?.self&&id!==memory.owner, bot:!!d.entity?.bot, group: d.isGroup, channel: d.isChannel, forum: !!d.entity?.forum, readState:{inbox:d.dialog.readInboxMaxId||0,outbox:d.dialog.readOutboxMaxId||0,unread:d.unreadCount||0,broadcast:!!d.entity?.broadcast,saved:id===memory.owner}, online:!!d.entity?.status&&d.entity.status.className==='UserStatusOnline'&&(!d.entity.status.expires||d.entity.status.expires>Date.now()/1000), status:d.entity?.status?{type:d.entity.status.className,wasOnline:d.entity.status.wasOnline,expires:d.entity.status.expires}:null }; });
 }
 export function mediaInfo(m) {
   if(m.media?.className==='MessageMediaPoll'&&m.media.poll)return pollMedia(m.media);
@@ -324,6 +324,7 @@ function installRealtime(source){
   if(update instanceof UpdateConnectionState){publish({kind:'connection',online:update.state===UpdateConnectionState.connected});return}
   const type=update.className;
   if(type==='UpdateMessagePoll'){applyPollUpdate(update);return}
+  if(['UpdateDialogFilter','UpdateDialogFilters','UpdateDialogFilterOrder'].includes(type)){publish({kind:'folders'});return}
   if(type==='UpdateDialogUnreadMark'){try{publish({kind:'read',chat:utils.getPeerId(update.peer.peer).toString(),unreadMark:!!update.unread})}catch{}return}
   if(type==='UpdateUserTyping'){try{publish({kind:'typing',chat:update.userId.toString(),typing:true,action:update.action?.className})}catch{}return}
   if(type==='UpdateChatUserTyping'){try{publish({kind:'typing',chat:utils.getPeerId(new Api.PeerChat({chatId:update.chatId})).toString(),typing:true,user:utils.getPeerId(update.fromId).toString(),action:update.action?.className})}catch{}return}
@@ -333,7 +334,7 @@ function installRealtime(source){
    let chat;try{chat=utils.getPeerId(update.peer||new Api.PeerChannel({channelId:update.channelId})).toString()}catch{return}
    publish({kind:'read',chat,topic:update.topMsgId||0,inbox:type.includes('Inbox')?(update.readMaxId??update.maxId):undefined,outbox:type.includes('Outbox')?(update.readMaxId??update.maxId):undefined,unread:update.stillUnreadCount??update.unreadCount});return;
   }
-  if(['UpdateDialogPinned','UpdatePinnedDialogs','UpdatesTooLong','UpdateChannelTooLong','UpdateChannel','UpdateUserName','UpdateUserPhoto','UpdateUser','UpdateUserPhone','UpdateContactRegistered','UpdateContactsReset'].includes(type))publish({kind:'sync'});
+  if(['UpdateNotifySettings','UpdateFolderPeers','UpdateDialogPinned','UpdatePinnedDialogs','UpdatesTooLong','UpdateChannelTooLong','UpdateChannel','UpdateUserName','UpdateUserPhoto','UpdateUser','UpdateUserPhone','UpdateContactRegistered','UpdateContactsReset'].includes(type))publish({kind:'sync'});
  },new Raw({}));
 }
 
@@ -501,3 +502,24 @@ export async function getDiscussionTarget(id,messageId,comment=0){
  const message=result.messages.find(m=>utils.getPeerId(m.peerId).toString()!==id);if(!message)throw Error('该消息没有可访问的讨论区');return {peer:await resolvePeer(utils.getPeerId(message.peerId).toString()),topic:message.id,messageId:comment||message.id};
 }
 export async function getStickerSetByName(name){return fetchStickerSet(new Api.InputStickerSetShortName({shortName:name}))}
+
+// Keep original TL objects per client so editing a name preserves unknown flags,
+// formatted titles, shared-folder metadata and peers absent from the local list.
+const folderStates=new WeakMap();
+function folderSummary(f){const ids=key=>(f[key]||[]).map(p=>utils.getPeerId(p).toString());return {id:f.id,title:typeof f.title==='string'?f.title:f.title?.text||'',shared:f.className==='DialogFilterChatlist',...Object.fromEntries(['contacts','nonContacts','groups','broadcasts','bots','excludeMuted','excludeRead','excludeArchived'].map(k=>[k,!!f[k]])),pinnedPeers:ids('pinnedPeers'),includePeers:ids('includePeers'),excludePeers:ids('excludePeers')}}
+export async function getDialogFolders(){const c=await getClient(),result=await c.invoke(new Api.messages.GetDialogFilters());if(c!==client)throw Error('账号已切换');const all=result.filters||result;folderStates.set(c,all);return all.filter(f=>f.className!=='DialogFilterDefault').map(folderSummary)}
+export async function saveDialogFolder(data){
+ const c=await getClient();if(!folderStates.has(c))await getDialogFolders();if(c!==client)throw Error('账号已切换');
+ const all=folderStates.get(c),old=all.find(f=>f.id===data.id);if(data.id&&!old)throw Error('分组已变化，请刷新后重试');
+ const title=data.title.trim();if(!title||[...title].length>12)throw Error('分组名称需要 1–12 个字');
+ const id=old?.id||Math.max(1,...all.map(f=>f.id||0))+1;
+ const resolve=async key=>{const previous=old?.[key]||[];return Promise.all((data[key]||[]).map(async id=>previous.find(p=>utils.getPeerId(p).toString()===id)||await c.getInputEntity(peers.get(id)||bigInt(id))))};
+ const values={...old,id,title:old&&folderSummary(old).title===title?old.title:new Api.TextWithEntities({text:title,entities:[]})};
+ for(const key of ['contacts','nonContacts','groups','broadcasts','bots','excludeMuted','excludeRead','excludeArchived'])values[key]=!!data[key];
+ for(const key of ['pinnedPeers','includePeers','excludePeers'])values[key]=await resolve(key);
+ if(c!==client)throw Error('账号已切换');
+ const filter=new (old?.className==='DialogFilterChatlist'?Api.DialogFilterChatlist:Api.DialogFilter)(values);
+ if(!await c.invoke(new Api.messages.UpdateDialogFilter({id,filter})))throw Error('保存失败');if(c!==client)throw Error('账号已切换');return getDialogFolders();
+}
+export async function deleteDialogFolder(id){const c=await getClient();if(!await c.invoke(new Api.messages.UpdateDialogFilter({id})))throw Error('删除失败');if(c!==client)throw Error('账号已切换');return getDialogFolders()}
+export async function reorderDialogFolders(ids){const c=await getClient();if(!folderStates.has(c))await getDialogFolders();const all=folderStates.get(c),order=all.map(f=>f.className==='DialogFilterDefault'?0:ids.shift());if(c!==client)throw Error('账号已切换');if(!await c.invoke(new Api.messages.UpdateDialogFiltersOrder({order})))throw Error('排序失败');if(c!==client)throw Error('账号已切换');return getDialogFolders()}
