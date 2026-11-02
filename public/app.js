@@ -1,3 +1,6 @@
+import {createPollCard} from './poll.js';
+import {messageAlbums} from './message-albums.js';
+import {createVideoAvatar} from './video-avatar.js';
 import {createChatMembership} from './chat-membership.js';
 import {compactButtonLabel} from './button-label.js';
 import {createProfileStories} from './profile-stories.js';
@@ -62,14 +65,14 @@ throw Error('未知操作');}
 function avatar(el,d){
  el.textContent=d.title.slice(0,1);el.dataset.peer=d.id;const identity=d.id+':'+(d.avatarKey||'');el.dataset.avatarIdentity=identity;
  if(!d.avatarKey)return;
- el.loadResource=async()=>{try{const key='avatar:'+d.id+':'+d.avatarKey,small=watchDocumentScroll();const url=await avatarResources.load(key+(small?':64':''),async()=>{const original=()=>cachedBlob(key,()=>telegram.downloadAvatar(d.id));const blob=small?await cachedBlob(key+':64',async()=>avatarThumbnail(await original())):await original();return blob?resourceURL(blob):null});if(!url||!el.isConnected||el.dataset.avatarIdentity!==identity)return;const img=document.createElement('img');img.src=url;img.alt='';img.onerror=()=>{if(el.dataset.avatarIdentity===identity)el.textContent=d.title.slice(0,1)};el.replaceChildren(img)}catch{ /* Initial remains visible if Telegram denies access. */ }};
+ el.loadResource=async()=>{try{const key='avatar:'+d.id+':'+d.avatarKey,small=watchDocumentScroll();const url=await avatarResources.load(key+(small?':64':''),async()=>{const original=()=>cachedBlob(key,()=>telegram.downloadAvatar(d.id));const blob=small?await cachedBlob(key+':64',async()=>avatarThumbnail(await original())):await original();return blob?resourceURL(blob):null});if(!url||!el.isConnected||el.dataset.avatarIdentity!==identity)return;const img=document.createElement('img');img.src=url;img.alt='';img.onerror=()=>{if(el.dataset.avatarIdentity===identity)el.textContent=d.title.slice(0,1)};const moving=el.querySelector('.profile-video-avatar');el.replaceChildren(img);if(moving)el.append(moving)}catch{ /* Initial remains visible if Telegram denies access. */ }};
  visibleResources.observe(el);
 }
 function time(date){return new Date(date*1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}
 const roundDialogList=installRoundList($('#dialogs'),{isVisible:()=>!document.body.classList.contains('nav-contacts')&&!document.body.classList.contains('nav-me')});
 const roundContactList=installRoundList($('#contactsView'),{isVisible:()=>document.body.classList.contains('nav-contacts')});
-const updateContactList=createDialogList($('#contactsView'),{select:selectContact,avatar,formatTime:time,sort:list=>list,emptyText:'暂无联系人',observeAvatar:el=>visibleResources.observe(el),releaseAvatar:el=>visibleResources.unobserve(el)});
-const updateDialogList=createDialogList($('#dialogs'),{select,contextMenu:(id,event,row)=>openConversationMenu(id,event,row),avatar,formatTime:time,observeAvatar:el=>visibleResources.observe(el),releaseAvatar:el=>visibleResources.unobserve(el)});
+const updateContactList=createDialogList($('#contactsView'),{isVisible:()=>!document.hidden&&document.body.classList.contains('nav-contacts'),select:selectContact,avatar,formatTime:time,sort:list=>list,emptyText:'暂无联系人',observeAvatar:el=>visibleResources.observe(el),releaseAvatar:el=>visibleResources.unobserve(el)});
+const updateDialogList=createDialogList($('#dialogs'),{animate:()=>!watchDocumentScroll(),getScroller:()=>watchDocumentScroll()?(document.scrollingElement||document.documentElement):$('#dialogs'),getZoom:()=>visualSettings.scale||1,isVisible:()=>!document.hidden&&!document.body.classList.contains('nav-contacts')&&!document.body.classList.contains('nav-me')&&(!document.body.classList.contains('chat-open')||window.innerWidth>700),select,contextMenu:(id,event,row)=>openConversationMenu(id,event,row),avatar,formatTime:time,observeAvatar:el=>visibleResources.observe(el),releaseAvatar:el=>visibleResources.unobserve(el)});
 function renderDialogs(){
  dialogs=orderDialogs(dialogs);
  updateDialogList(dialogs,{active,tab,query:$('#search').value,connected});
@@ -114,7 +117,7 @@ async function loadAudioCover(message,peer){
  }catch{return null}
 }
 const audioPlayer=createAudioPlayer({load:playInfoAudio,coverLoader:loadAudioCover});
-const infoPage=createConversationInfo({audioPlayer,root:$('#conversationInfo'),telegram,avatar,galleryTile:infoGalleryTile,onOpenItem:openInfoItem,onLocate:(item,peer)=>openTelegramRoute({kind:'message',reference:item.sourcePeer||peer,messageId:item.sourceMessageId||item.id,topic:item.sourcePeer?0:item.topicId||0}),onLocateError:error=>toast(error.errorMessage||error.message),onPlayAudio:playInfoAudio,coverLoader:loadAudioCover,readCache:snapshotGet,writeCache:snapshotPut,watch:watchDocumentScroll,cacheVersion:cacheGeneration,scope:()=>telegram.settings().owner||telegram.cacheScope(),release:root=>{if(root.matches('.info-media-tile'))visibleResources.unobserve(root);for(const el of root.querySelectorAll('.avatar,.auto-image,.video-card,.sticker,.info-media-tile')){visibleResources.unobserve(el);const animation=stickerAnimations.get(el);if(animation){animation.destroy();stickerAnimations.delete(el)}}},onBack:()=>nav.goBack(),onMember:item=>openPeerProfile(item.id)});
+const infoPage=createConversationInfo({audioPlayer,root:$('#conversationInfo'),telegram,avatar,galleryTile:infoGalleryTile,storyTile:infoStoryTile,onOpenItem:openInfoItem,onLocate:(item,peer)=>openTelegramRoute({kind:'message',reference:item.sourcePeer||peer,messageId:item.sourceMessageId||item.id,topic:item.sourcePeer?0:item.topicId||0}),onLocateError:error=>toast(error.errorMessage||error.message),onPlayAudio:playInfoAudio,coverLoader:loadAudioCover,readCache:snapshotGet,writeCache:snapshotPut,watch:watchDocumentScroll,cacheVersion:cacheGeneration,scope:()=>telegram.settings().owner||telegram.cacheScope(),release:root=>{if(root.matches('.info-media-tile'))visibleResources.unobserve(root);for(const el of root.querySelectorAll('.avatar,.auto-image,.video-card,.sticker,.info-media-tile')){visibleResources.unobserve(el);const animation=stickerAnimations.get(el);if(animation){animation.destroy();stickerAnimations.delete(el)}}},onBack:()=>nav.goBack(),onMember:item=>openPeerProfile(item.id)});
 function closeConversationInfo(){const open=document.body.classList.contains('info-open');infoPage.hide();if(open)messageScroller().scrollTop=infoChatScroll}
 function openConversationInfo(record=true,tab){const dialog=dialogs.find(d=>d.id===active);if(!dialog)return;if(!document.body.classList.contains('info-open'))infoChatScroll=messageScroller().scrollTop;if(record)nav.push('info');void infoPage.open(dialog,tab);$('#messages').querySelectorAll('video,audio').forEach(el=>el.pause());if(watchDocumentScroll())messageScroller().scrollTop=0}
 function infoGalleryTile(message,peer,alive){
@@ -128,6 +131,13 @@ function infoGalleryTile(message,peer,alive){
    });
   }
  });
+}
+function infoStoryTile(message,peer,alive){
+ const owner=telegram.cacheScope();
+ return createGalleryTile(message,peer,{alive,observe:el=>visibleResources.observe(el),onOpen:openStoryMedia,load:(m,id,quality)=>resources.load(owner+':story:'+id+':'+m.id+':'+quality,async()=>{
+  if(!alive()||telegram.cacheScope()!==owner)throw Error('预览已关闭');
+  const blob=await telegram.downloadStory(id,m.id,quality);if(!alive()||telegram.cacheScope()!==owner)throw Error('预览已关闭');return blob?resourceURL(blob):null;
+ })});
 }
 async function openInfoItem(message,peer,preview){
  $('#messages').querySelectorAll('video').forEach(video=>video.pause());
@@ -151,24 +161,30 @@ function renderMessages(mode='preserve'){
  const root=$('#messages'),pane=messageScroller();const oldHeight=pane.scrollHeight||0,oldTop=pane.scrollTop||0,nearBottom=oldHeight-oldTop-(pane.clientHeight||0)<120;
  const media=new Map([...root.querySelectorAll('[data-media-key]')].map(el=>[el.dataset.mediaKey,el]));
  const previousNodes=new Map([...root.children].map(el=>[el.dataset.listKey,el]));const nodes=[];readObserver.disconnect();let lastDay='',unreadAdded=false;const state=currentRead();
- for(const m of history[threadKey()]||[]){
+ for(const album of messageAlbums(history[threadKey()]||[])){
+ const m=album.at(-1),isAlbum=album.length>1;
  const day=new Date(m.date*1000).toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric'});
  if(day!==lastDay){const key='date:'+threadKey()+':'+day;const date=previousNodes.get(key)||document.createElement('div');date.dataset.listKey=key;date.className='history-date';if(date.textContent!==day)date.textContent=day;nodes.push(date);lastDay=day}
  const unread=initialUnread.get(threadKey());if(!unreadAdded&&unread!==undefined&&!m.out&&m.id>unread){const key='unread:'+threadKey()+':'+unread;const divider=previousNodes.get(key)||document.createElement('div');divider.dataset.listKey=key;divider.className='unread-divider';if(divider.textContent!=='未读消息')divider.textContent='未读消息';nodes.push(divider);unreadAdded=true}
- const nodeKey='message:'+active+':'+m.id,signature=JSON.stringify([m,deliveryState(m,state),!!dialogs.find(d=>d.id===active)?.group]);
+ const nodeKey=(m.groupedId&&['image','video'].includes(m.media?.kind)?'album:'+active+':'+m.groupedId:'message:'+active+':'+m.id),signature=JSON.stringify([album,deliveryState(m,state),!!dialogs.find(d=>d.id===active)?.group]);
  const oldRow=previousNodes.get(nodeKey);if(oldRow?.renderSignature===signature){nodes.push(oldRow);if(!m.out&&m.id>(state.inbox||0))readObserver.observe(oldRow);continue}
  const row=document.createElement('div');row.dataset.listKey=nodeKey;row.renderSignature=signature;row.className='message-row'+(m.out?' out':'');row.dataset.messageId=String(m.id);
  const body=document.createElement('div');body.className='message-body';const bubble=document.createElement('div');bubble.className='bubble';if(m.service){row.classList.add('service-row');bubble.classList.add('service-bubble')}
  if(!m.service&&dialogs.find(d=>d.id===active)?.group&&!m.out&&m.senderName){const author=document.createElement(m.senderId?'button':'div');author.className='sender-name';author.textContent=m.senderName;if(m.senderId){author.type='button';author.onclick=()=>openPeerProfile(m.senderId)}bubble.append(author)}
- if(m.replyId){const quote=document.createElement('button');quote.className='reply-quote';quote.setAttribute('aria-label','查看引用消息');const name=document.createElement('strong');name.textContent=m.reply?.senderName||'引用消息';const text=document.createElement('span');text.textContent=m.reply?messagePreview(m.reply):'原消息 #'+m.replyId;quote.append(name,text);quote.onclick=()=>jumpToMessage(m.replyPeer||active,m.replyId);bubble.append(quote)}
- if(m.text)bubble.append(richText(m.text,m.entities));else if(!m.media&&!m.webpage&&!m.buttons?.length){const pending=document.createElement('span');pending.className='message-pending';pending.textContent='正在同步消息…';bubble.append(pending)}
- if(m.media){
+ const reply=album.find(item=>item.replyId)||m;
+ if(reply.replyId){const quote=document.createElement('button');quote.className='reply-quote';quote.setAttribute('aria-label','查看引用消息');const name=document.createElement('strong');name.textContent=reply.reply?.senderName||'引用消息';const text=document.createElement('span');text.textContent=reply.reply?messagePreview(reply.reply):'原消息 #'+reply.replyId;quote.append(name,text);quote.onclick=()=>jumpToMessage(reply.replyPeer||active,reply.replyId);bubble.append(quote)}
+ if(m.text&&!isAlbum)bubble.append(richText(m.text,m.entities));else if(!m.media&&!m.webpage&&!m.buttons?.length){const pending=document.createElement('span');pending.className='message-pending';pending.textContent='正在同步消息…';bubble.append(pending)}
+ if(isAlbum){
+ bubble.classList.add('album-bubble');const grid=document.createElement('div');grid.className='media-album';grid.dataset.count=String(album.length);
+ for(const item of album){const cell=document.createElement('div');cell.className='album-cell';cell.dataset.messageId=String(item.id);cell.dataset.albumMessage=String(item.id);const key=active+':'+item.id+':'+item.media.kind+':'+(item.media.key||'');const node=media.get(key)||mediaCard(item,active);node.dataset.mediaKey=key;cell.append(node);grid.append(cell)}bubble.append(grid);
+ for(const item of album)if(item.text){const caption=document.createElement('div');caption.className='album-caption';caption.dataset.albumMessage=String(item.id);caption.append(richText(item.text,item.entities));bubble.append(caption)}
+ }else if(m.media){
  if(m.media.kind==='image')bubble.classList.add('image-bubble');if(m.media.kind==='video')bubble.classList.add('video-bubble');if(m.media.kind==='sticker')bubble.classList.add('sticker-bubble');if(m.media.kind==='audio')bubble.classList.add('audio-bubble');
- const key=active+':'+m.id+':'+m.media.kind+':'+(m.media.key||'');const node=media.get(key)||mediaCard(m,active);node.dataset.mediaKey=key;bubble.append(node);
+ const key=active+':'+m.id+':'+m.media.kind+':'+(m.media.key||'');const node=media.get(key)||mediaCard(m,active);node.dataset.mediaKey=key;node.updateMessage?.(m);bubble.append(node);
  }
  if(m.webpage){const url=safeURL(m.webpage.url);if(url){const link=document.createElement('a');link.className='web-preview';link.href=url;link.target='_blank';link.rel='noopener noreferrer';const title=document.createElement('strong');title.textContent=m.webpage.title||new URL(url).hostname;const desc=document.createElement('span');desc.textContent=(m.webpage.description||'').slice(0,250);link.append(title,desc);bubble.append(link)}}
  if(m.buttons?.length)bubble.append(messageButtons(m,active));
- body.append(bubble);row.oncontextmenu=e=>{if(e.target.closest('input,textarea,video,audio'))return;e.preventDefault();e.stopPropagation();openMessageMenu(m,row,e)};
+ body.append(bubble);row.oncontextmenu=e=>{if(e.target.closest('input,textarea,video,audio'))return;e.preventDefault();e.stopPropagation();const id=Number(e.target.closest('[data-album-message]')?.dataset.albumMessage);openMessageMenu(isAlbum?(album.find(item=>item.id===id)||album.find(item=>item.text)||m):m,row,e)};
  const meta=document.createElement('div');meta.className='message-time';meta.textContent=(m.edited?'已编辑 · ':'')+time(m.date);
  if(m.out){const status=document.createElement('span');status.className='delivery-status';const label=deliveryState(m,state);status.textContent=label==='已读'?' ✓✓':label==='已保存'?' · 已保存':' ✓';status.title=label;status.setAttribute('aria-label',label);meta.append(status)}
  bubble.append(meta);
@@ -430,13 +446,14 @@ function prepareFullscreenMenu(root,title,close){
 $('#stickerPack').addEventListener('close',refreshFullscreenRounds);
 function loadVisualSettings(){try{return Object.assign({fontSize:13,radius:9,scale:1},JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}'))}catch{return {fontSize:13,radius:9,scale:1}}}
 function persistVisualSettings(){try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(visualSettings))}catch{}}
+let viewerUI;
 function applyVisualSettings(){
  document.documentElement.style.setProperty('--message-font-size',visualSettings.fontSize+'px');
  document.documentElement.style.setProperty('--bubble-radius',visualSettings.radius+'px');
  document.documentElement.style.setProperty('--ui-scale',visualSettings.scale);
  document.documentElement.style.zoom=visualSettings.scale;
  for(const card of document.querySelectorAll('.video-card'))card.updatePreviewSize?.();
- refreshFullscreenRounds();
+ viewerUI?.layout();refreshFullscreenRounds();
 }
 function openSettings(){
  const accounts=telegram.listAccounts(),current=accounts.find(a=>a.active);
@@ -462,7 +479,7 @@ $('#fontSizeSlider').oninput=e=>{visualSettings.fontSize=Number(e.target.value);
 $('#radiusSlider').oninput=e=>{visualSettings.radius=Number(e.target.value);$('#radiusValue').textContent=visualSettings.radius;applyVisualSettings();persistVisualSettings()};
 for(const b of document.querySelectorAll('#scaleSeg button'))b.onclick=()=>{visualSettings.scale=Number(b.dataset.scale);for(const x of document.querySelectorAll('#scaleSeg button'))x.classList.toggle('selected',x===b);applyVisualSettings();persistVisualSettings()};
 visualSettings=loadVisualSettings();applyVisualSettings();
-const viewerUI=installMediaViewer({root:$('#mediaViewer'),content:$('#viewerContent'),getZoom:()=>visualSettings.scale});
+viewerUI=installMediaViewer({root:$('#mediaViewer'),content:$('#viewerContent'),getZoom:()=>visualSettings.scale});
 
 // Touch list headers collapse until the active list reaches its top edge.
 if(matchMedia('(pointer: coarse)').matches){
@@ -493,6 +510,7 @@ document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='k'){
 function bytes(n){return n>=1073741824?(n/1073741824).toFixed(1)+' GiB':n>=1048576?(n/1048576).toFixed(1)+' MiB':n>=1024?(n/1024).toFixed(1)+' KiB':(n||0)+' B'}
 const mediaCache=new Map();
 function mediaCard(m,chat){
+ if(m.media.kind==='poll')return createPollCard(m,{vote:async(messageId,indices)=>{const result=await telegram.votePoll(chat,messageId,indices);receiveUpdate({kind:'hydrate',chat,topic:m.topicId||0,message:result});return result},onError:error=>toast(error.errorMessage||error.message)});
  if(m.media.kind==='image')return imageCard(m,chat);if(m.media.kind==='sticker')return stickerCard(m,chat);if(m.media.kind==='video')return videoCard(m,chat);if(m.media.kind==='audio')return createAudioRow(m,chat,{player:audioPlayer,coverLoader:loadAudioCover});
  const info=m.media,card=document.createElement('div');card.className='media-card';
  const title=document.createElement('div');title.className='media-name';title.textContent=({image:'▧ 图片',video:'▷ 视频',audio:'♫ 音频',file:'▱ 文件',unsupported:'◇ 其他媒体'}[info.kind]||'媒体')+' · '+info.name;card.append(title);
@@ -725,12 +743,14 @@ $('#stickerPack').addEventListener('close',()=>{packGeneration++;clearStickerGri
 $('#mediaLibrary').addEventListener('close',()=>{$('#mediaList').querySelectorAll('.audio-track').forEach(row=>row.disposeMedia?.());$('#mediaList').querySelectorAll('video,audio').forEach(el=>el.pause());$('#mediaList').querySelectorAll('.auto-image,.sticker,.video-card').forEach(el=>visibleResources.unobserve(el));$('#mediaList').replaceChildren()});
 
 const seenLive=new Set();let liveRenderQueued=false,liveChatDirty=false,dialogSyncTimer;
-function scheduleLiveRender(chatChanged=false){liveChatDirty ||= chatChanged;if(liveRenderQueued)return;liveRenderQueued=true;queueMicrotask(()=>{liveRenderQueued=false;const draw=liveChatDirty;liveChatDirty=false;renderDialogs();if(draw&&active&&!document.hidden)renderMessages()})}
+function scheduleLiveRender(chatChanged=false){liveChatDirty ||= chatChanged;if(liveRenderQueued)return;liveRenderQueued=true;const schedule=window.requestAnimationFrame?fn=>window.requestAnimationFrame(fn):queueMicrotask;schedule(()=>{liveRenderQueued=false;const draw=liveChatDirty;liveChatDirty=false;renderDialogs();if(draw&&active&&!document.hidden)renderMessages()})}
 function mergeDialogSnapshot(data){
  data=data.map(d=>{const cleared=clearedConversations.get(d.id);return cleared!==undefined&&(d.lastMessageId||0)<=cleared?{...d,text:'',date:undefined,time:'',lastMessageId:0,unread:0}:d}).filter(d=>{const cutoff=removedConversations.get(d.id);if(cutoff!==undefined){if((d.lastMessageId||0)<=cutoff)return false;removedConversations.delete(d.id)}return true});
  const previous=new Map(dialogs.map(d=>[d.id,d]));
  const merged=data.map(d=>{const old=previous.get(d.id);if(!old)return d;if((old.lastMessageId||0)>(d.lastMessageId||0)){d={...d,text:old.text,date:old.date,time:old.time,lastMessageId:old.lastMessageId,unread:Math.max(old.unread||0,d.unread||0)}}if((old.readState?.inbox||0)>(d.readState?.inbox||0)){d.readState=old.readState;d.unread=old.unread}return d});
- const ids=new Set(merged.map(d=>d.id));for(const d of dialogs)if(!ids.has(d.id)&&seenLive.has(d.id+':'+d.lastMessageId))merged.unshift(d);return merged;
+ // A peer opened through a link may have no server dialog until the first
+ // message is sent. Keep the active peer available to headers and actions.
+ const ids=new Set(merged.map(d=>d.id));for(const d of dialogs)if(!ids.has(d.id)&&(d.id===active||!removedConversations.has(d.id)&&seenLive.has(d.id+':'+d.lastMessageId)))merged.unshift(d);return merged;
 }
 async function performRecovery(){if(!connected||polling)return;if(document.body.classList.contains('nav-contacts'))void loadContacts();if(document.body.classList.contains('nav-me'))void loadProfile();polling=true;try{const data=await telegram.getDialogs();dialogs=mergeDialogSnapshot(data);snapshotPut('dialogs',dialogs);renderDialogs();if(active&&!document.hidden)await refreshThread()}catch{}finally{polling=false}}
 function requestRecovery(delay=150){clearTimeout(dialogSyncTimer);dialogSyncTimer=setTimeout(performRecovery,delay)}
@@ -863,28 +883,31 @@ function syncLoopVideos(){for(const card of document.querySelectorAll('.loop-vid
 document.addEventListener('visibilitychange',syncLoopVideos);$('#mediaViewer').addEventListener('close',syncLoopVideos);
 
 let peerProfileGeneration=0;
+const peerVideoAvatar=createVideoAvatar({root:$('#peerProfileAvatar'),load:p=>telegram.downloadAvatarVideo(p.id,watchDocumentScroll()),alive:()=>$('#peerProfile').open});
 const storiesRoot=document.createElement('section');storiesRoot.id='peerProfileStories';storiesRoot.hidden=true;$('#peerProfile .peer-profile-main').append(storiesRoot);
-const profileStories=createProfileStories({root:storiesRoot,telegram,observe:el=>visibleResources.observe(el),unobserve:el=>visibleResources.unobserve(el),onChange:refreshFullscreenRounds,onOpen:async function openStoryMedia(item,id){
+const profileStories=createProfileStories({root:storiesRoot,telegram,observe:el=>visibleResources.observe(el),unobserve:el=>visibleResources.unobserve(el),onChange:refreshFullscreenRounds,onOpen:openStoryMedia});
+async function openStoryMedia(item,id){
  const content=$('#viewerContent');content.replaceChildren();const viewer=$('#mediaViewer');
  const card=document.createElement('div');card.className=item.media.kind==='video'?'video-card':'story-image';card.dataset.width=item.media.width||720;card.dataset.height=item.media.height||1280;
  const media=document.createElement(item.media.kind==='video'?'video':'img');if(item.media.kind==='video'){media.playsInline=true;media.preload='auto';card.append(media);content.append(card)}else content.append(media);
  viewer.showModal();let objectURL;const cleanup=()=>{if(objectURL)URL.revokeObjectURL(objectURL)};viewer.addEventListener('close',cleanup,{once:true});
  try{const blob=await telegram.downloadStory(id,item.id);if(!viewer.open||!media.isConnected)return;objectURL=URL.createObjectURL(blob);media.src=objectURL;if(item.media.kind==='video')await media.play().catch(()=>{})}catch(error){if(media.isConnected){content.replaceChildren();const hint=document.createElement('p');hint.textContent=error.errorMessage||error.message;content.append(hint);const retry=document.createElement('button');retry.className='media-action';retry.textContent='重试';const retryAt=error.retryAt||0;retry.disabled=retryAt>Date.now();const timer=setTimeout(()=>{retry.disabled=false},Math.max(0,retryAt-Date.now()));viewer.addEventListener('close',()=>clearTimeout(timer),{once:true});retry.onclick=()=>{cleanup();void openStoryMedia(item,id)};content.append(retry)}}
-}});
+}
+
 
 function ensureLinkedDialog(peer){if(!dialogs.some(d=>d.id===peer.id)){dialogs.push({...peer,unread:0,text:''});renderDialogs()}}
 function closePeerProfile(){$('#peerProfile').close()}
 $('#closePeerProfile').onclick=closePeerProfile;
-$('#peerProfile').addEventListener('close',()=>{peerProfileGeneration++;profileStories.reset()});
+$('#peerProfile').addEventListener('close',()=>{peerProfileGeneration++;profileStories.reset();peerVideoAvatar.reset()});
 function paintPeerProfile(peer){
- $('#peerProfileHeading').textContent=peer.user?'个人资料':'会话资料';$('#peerProfileName').textContent=peer.title||'个人资料';$('#peerProfileStatus').textContent=conversationStatus(peer);const photo=$('#peerProfileAvatar');if(photo.dataset.avatarIdentity!==peer.id+':'+(peer.avatarKey||''))avatar(photo,peer);
+ $('#peerProfileHeading').textContent=peer.user?'个人资料':'会话资料';$('#peerProfileName').textContent=peer.title||'个人资料';$('#peerProfileStatus').textContent=conversationStatus(peer);const photo=$('#peerProfileAvatar');if(photo.dataset.avatarIdentity!==peer.id+':'+(peer.avatarKey||''))avatar(photo,peer);void peerVideoAvatar.update(peer);
  const username=$('#peerProfileUsername');username.hidden=!peer.username;username.textContent=peer.username?'@'+peer.username:'';if(peer.username)username.href='https://t.me/'+encodeURIComponent(peer.username);
  const about=$('#peerProfileAbout');about.hidden=!peer.about;about.replaceChildren(richText(peer.about||''));
  const action=$('#peerProfileChat');action.disabled=false;action.textContent=peer.user?'发消息':'打开会话';action.onclick=async()=>{closePeerProfile();ensureLinkedDialog(peer);await select(peer.id)};
  refreshFullscreenRounds();
 }
 async function openPeerProfile(reference){
- const version=++peerProfileGeneration,scope=telegram.cacheScope();const root=$('#peerProfile');profileStories.reset();
+ const version=++peerProfileGeneration,scope=telegram.cacheScope();const root=$('#peerProfile');profileStories.reset();peerVideoAvatar.reset();
  $('#peerProfileName').textContent='正在读取资料…';$('#peerProfileStatus').textContent='';$('#peerProfileUsername').hidden=true;$('#peerProfileAbout').hidden=true;$('#peerProfileError').textContent='';$('#peerProfileAvatar').dataset.avatarIdentity='';$('#peerProfileAvatar').replaceChildren();$('#peerProfileChat').disabled=true;
  if(!root.open)root.showModal();
  const alive=()=>root.open&&version===peerProfileGeneration&&scope===telegram.cacheScope();
@@ -895,7 +918,7 @@ async function openPeerProfile(reference){
  }catch(error){if(alive()){if($('#peerProfileName').textContent==='正在读取资料…')$('#peerProfileName').textContent='个人资料';$('#peerProfileError').textContent=error.errorMessage||error.message||'无法读取资料'}}
 }
 async function openInvite(hash){
- profileStories.reset();const result=await telegram.checkInvite(hash);if(result.joined){ensureLinkedDialog(result.peer);await select(result.peer.id);return}
+ profileStories.reset();peerVideoAvatar.reset();const result=await telegram.checkInvite(hash);if(result.joined){ensureLinkedDialog(result.peer);await select(result.peer.id);return}
  const version=++peerProfileGeneration,root=$('#peerProfile');$('#peerProfileHeading').textContent='群组邀请';$('#peerProfileName').textContent=result.title;$('#peerProfileStatus').textContent=result.members===undefined?'邀请加入群组':result.members+' 位成员';$('#peerProfileAvatar').dataset.avatarIdentity='';$('#peerProfileAvatar').textContent=result.title.slice(0,1);$('#peerProfileUsername').hidden=true;$('#peerProfileAbout').hidden=true;$('#peerProfileError').textContent='';
  const action=$('#peerProfileChat');action.disabled=false;action.textContent=result.requestNeeded?'申请加入':'加入群组';
  action.onclick=async()=>{action.disabled=true;try{const peer=await telegram.joinInvite(hash);if(version!==peerProfileGeneration||!root.open)return;closePeerProfile();ensureLinkedDialog(peer);await select(peer.id)}catch(error){if(version!==peerProfileGeneration)return;if(/INVITE_REQUEST_SENT|申请已提交/.test(error.errorMessage||error.message)){action.textContent='申请已发送';$('#peerProfileError').textContent='等待群组管理员审核'}else{action.disabled=false;$('#peerProfileError').textContent=error.errorMessage||error.message}}};

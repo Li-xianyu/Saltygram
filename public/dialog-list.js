@@ -14,15 +14,35 @@ export function matchesDialog(d,tab,query=''){
  if(tab==='unread')return !!(d.unread||d.unreadMark);if(tab==='group')return !!d.group;if(tab==='private')return d.personal===true;return true;
 }
 function text(node,value){const next=String(value??'');if(node.textContent!==next)node.textContent=next}
-export function createDialogList(root,{select,contextMenu,avatar,observeAvatar=()=>{},releaseAvatar=()=>{},formatTime,sort=orderDialogs,emptyText='暂无会话'}){
- const records=new Map();let view='',empty;
- return function update(dialogs,{active='',tab='all',query='',connected=false}={}){
-  const rootRect=root.getBoundingClientRect?.(),oldScroll=root.scrollTop||0;
-  const anchor=oldScroll>2&&rootRect?[...root.children].find(el=>el.dataset.chatId&&el.getBoundingClientRect().bottom>rootRect.top):null;
-  const anchorTop=anchor?.getBoundingClientRect().top;
+export function createDialogList(root,{select,contextMenu,avatar,observeAvatar=()=>{},releaseAvatar=()=>{},formatTime,sort=orderDialogs,emptyText='暂无会话',getScroller=()=>root,isVisible=()=>true,getZoom=()=>1,animate=true,win=root.ownerDocument.defaultView}){
+ const records=new Map(),animations=new Map();let view='',empty,held=false,touching=false,scrolling=false,idleTimer,lastData,lastOptions,ownScroll;
+ const stopAnimations=()=>{for(const animation of animations.values())animation.cancel();animations.clear()};
+ const settle=()=>{win.clearTimeout(idleTimer);idleTimer=win.setTimeout(()=>{scrolling=false;if(!held&&lastData&&isVisible()){update(lastData,lastOptions)}},180);idleTimer?.unref?.()};
+ const onScroll=()=>{if(!isVisible())return;const scroller=getScroller();if(ownScroll?.element===scroller&&Math.abs((scroller.scrollTop||0)-ownScroll.top)<1){ownScroll=null;return}ownScroll=null;scrolling=true;stopAnimations();settle()};
+ root.addEventListener('scroll',onScroll,{passive:true});win.addEventListener('scroll',onScroll,{passive:true});
+ root.addEventListener('pointerdown',()=>{held=true;stopAnimations()},{passive:true});root.addEventListener('touchstart',()=>{held=touching=true;stopAnimations()},{passive:true});
+ const release=e=>{if(!held&&!touching)return;if(e.type.startsWith('pointer')&&touching)return;if(e.touches?.length)return;touching=held=false;scrolling=true;settle()};
+ for(const event of ['pointerup','pointercancel','touchend','touchcancel'])win.addEventListener(event,release,{passive:true,capture:true});
+ return update;
+ function update(dialogs,{active='',tab='all',query='',connected=false}={}){
+  lastData=dialogs;lastOptions={active,tab,query,connected};
+  const nextView=tab+'\n'+query,sameView=view===nextView,scroller=getScroller(),oldScroll=scroller.scrollTop||0;
+  const oldNodes=[...root.children],existingOrder=new Map(oldNodes.map((node,i)=>[node.dataset.chatId,i]));
+  let ordered=sort(dialogs).filter(d=>matchesDialog(d,tab,query));
+  if(sameView&&(held||scrolling))ordered=ordered.map((d,i)=>({d,rank:existingOrder.get(d.id)??oldNodes.length+i})).sort((a,b)=>a.rank-b.rank).map(x=>x.d);
+  const reordered=oldNodes.length!==ordered.length||ordered.some((d,i)=>oldNodes[i]?.dataset.chatId!==d.id);
+  const visible=isVisible(),measure=reordered&&sameView&&visible,rootRect=measure?root.getBoundingClientRect?.():null;
+  const top=scroller===root?rootRect?.top||0:0,bottom=scroller===root?rootRect?.bottom||win.innerHeight:win.innerHeight;
+  const positions=new Map();if(measure)for(const node of oldNodes){if(!node.dataset.chatId)continue;const rect=node.getBoundingClientRect?.();if(rect&&rect.bottom>top&&rect.top<bottom)positions.set(node,rect.top)}
+  // A promoted chat is a poor scroll anchor: following it would drag the
+  // viewport to the top. Prefer the visible row with the smallest rank change.
+  const nextRanks=new Map(ordered.map((d,i)=>[d.id,i]));
+  let anchor,rankChange=Infinity;for(const node of positions.keys()){const rank=nextRanks.get(node.dataset.chatId);if(rank===undefined)continue;const delta=Math.abs(rank-existingOrder.get(node.dataset.chatId));if(delta<rankChange){anchor=node;rankChange=delta}}
+  const anchorTop=positions.get(anchor);
+  if(reordered)stopAnimations();
   const ids=new Set(dialogs.map(d=>d.id));for(const [id,r]of records)if(!ids.has(id)){releaseAvatar(r.av);r.row.remove();records.delete(id)}
   const nodes=[];
-  for(const d of sort(dialogs).filter(d=>matchesDialog(d,tab,query))){
+  for(const d of ordered){
    let r=records.get(d.id);if(!r){
     const row=document.createElement('button');row.className='dialog-row';row.dataset.chatId=d.id;row.onclick=()=>select(d.id);
     if(contextMenu){row.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();return contextMenu(d.id,e,row)};row.onkeydown=e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();return contextMenu(d.id,null,row)}}}
@@ -43,8 +63,13 @@ export function createDialogList(root,{select,contextMenu,avatar,observeAvatar=(
   if(!nodes.length&&connected){empty ||= document.createElement('div');empty.className='empty';text(empty,query?'没有搜索结果':tab==='private'?'暂无私聊':emptyText);nodes.push(empty)}
   reconcileChildren(root,nodes);
   for(const node of nodes)if(node.dataset.chatId){const r=records.get(node.dataset.chatId);if(!r.av.querySelector('img')&&r.av.loadResource)observeAvatar(r.av)}
-  const nextView=tab+'\n'+query;if(view!==nextView)root.scrollTop=0;
-  else if(anchor?.isConnected&&anchor.parentElement===root&&anchorTop!==undefined){const next=oldScroll+(anchor.getBoundingClientRect().top-anchorTop);if(root.scrollTop!==next)root.scrollTop=next}
+  const zoom=Number(getZoom())||1;
+  if(!sameView&&visible){scroller.scrollTop=0;ownScroll={element:scroller,top:scroller.scrollTop}}
+  else if(oldScroll>2&&anchor?.isConnected&&anchor.parentElement===root&&anchorTop!==undefined){const next=oldScroll+(anchor.getBoundingClientRect().top-anchorTop)/zoom;if(Math.abs((scroller.scrollTop||0)-next)>.5){scroller.scrollTop=next;ownScroll={element:scroller,top:scroller.scrollTop}}}
+  if(measure&&(typeof animate==='function'?animate():animate)&&!held&&!scrolling&&!win.matchMedia?.('(prefers-reduced-motion: reduce)').matches){
+   const moves=[];for(const [node,oldTop]of positions){if(!node.isConnected||!node.animate)continue;const nextTop=node.getBoundingClientRect().top,delta=(oldTop-nextTop)/zoom;if(Math.abs(delta)>.5&&Math.abs(delta)*zoom<bottom-top)moves.push([node,delta])}
+   for(const [node,delta]of moves){const animation=node.animate([{translate:'0 '+delta+'px'},{translate:'0 0'}],{duration:160,easing:'cubic-bezier(.2,.8,.2,1)'});animations.set(node,animation);animation.finished.then(()=>{if(animations.get(node)===animation)animations.delete(node)},()=>{})}
+  }
   view=nextView;
  };
 }

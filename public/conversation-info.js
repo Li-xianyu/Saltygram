@@ -1,10 +1,11 @@
+import {createVideoAvatar} from './video-avatar.js';
 import {installInfoItemMenu} from './info-item-menu.js';
 import {createAudioPlayer,createAudioRow} from './audio-player.js';
 import {safeURL,richText} from './richtext.js';
 import {reconcileChildren} from './dialog-list.js';
 import {installRoundList} from './round-list.js';
 
-export const INFO_TABS=[['members','成员'],['media','媒体'],['saved','已收藏'],['music','音乐'],['files','文件'],['voice','语音'],['links','链接']];
+export const INFO_TABS=[['stories','动态'],['members','成员'],['media','媒体'],['saved','已收藏'],['music','音乐'],['files','文件'],['voice','语音'],['links','链接']];
 const ITEM_FILTERS={music:'audio',files:'file',voice:'voice',links:'link'};
 const ITEM_ICONS={music:'♫',files:'↧',voice:'◖',links:'↗',saved:'☆'};
 function formatBytes(n){return n>=1073741824?(n/1073741824).toFixed(1)+' GiB':n>=1048576?(n/1048576).toFixed(1)+' MiB':n>=1024?(n/1024).toFixed(1)+' KiB':(n||0)+' B'}
@@ -28,8 +29,8 @@ export function conversationStatus(profile){
  return ({UserStatusRecently:'最近在线',UserStatusLastWeek:'一周内在线',UserStatusLastMonth:'一个月内在线'})[status?.type]||'最近上线时间不可见';
 }
 
-export function createConversationInfo({root,telegram,avatar,galleryTile,audioPlayer,onOpenItem=()=>{},onLocate=()=>{},onLocateError=()=>{},onPlayAudio=()=>null,coverLoader=()=>null,readCache,writeCache,watch,onBack,onMember,release=()=>{},scope=()=>null,cacheVersion=()=>0,roundList=installRoundList}){
- let generation=0,current,tab='members',filter='visual',pages=new Map(),photoURL,owner,cacheEpoch,renderedKey='',records=new Map(),round,columns=3;
+export function createConversationInfo({root,telegram,avatar,galleryTile,storyTile=galleryTile,audioPlayer,onOpenItem=()=>{},onLocate=()=>{},onLocateError=()=>{},onPlayAudio=()=>null,coverLoader=()=>null,readCache,writeCache,watch,onBack,onMember,release=()=>{},scope=()=>null,cacheVersion=()=>0,roundList=installRoundList}){
+ let generation=0,current,tab='members',filter='visual',pages=new Map(),photoURL,owner,cacheEpoch,renderedKey='',records=new Map(),round,columns=3,videoAvatar,availability=new Map();
  const player=audioPlayer||createAudioPlayer({doc:root.ownerDocument,load:onPlayAudio,coverLoader});
  const $=selector=>root.querySelector(selector);
  const itemMenu=installInfoItemMenu(root,{onLocate,onError:onLocateError});
@@ -41,7 +42,7 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,audioPl
  const valid=(version,id)=>version===generation&&current?.id===id&&!root.hidden&&scope()===owner;
  const canCache=(version,id)=>valid(version,id)&&cacheVersion()===cacheEpoch;
  const text=(selector,value)=>{$(selector).textContent=value};
- function stop(){root.querySelectorAll('.audio-track').forEach(row=>row.disposeMedia?.());root.querySelectorAll('video,audio').forEach(el=>el.pause());release(root);if(photoURL){URL.revokeObjectURL(photoURL);photoURL=null}}
+ function stop(){videoAvatar?.reset();videoAvatar=null;root.querySelectorAll('.audio-track').forEach(row=>row.disposeMedia?.());root.querySelectorAll('video,audio').forEach(el=>el.pause());release(root);if(photoURL){URL.revokeObjectURL(photoURL);photoURL=null}}
  function hide(){itemMenu.reset();pageObserver?.disconnect();generation++;round?.destroy();round=null;stop();root.hidden=true;document.body.classList.remove('info-open');if(typeof window!=='undefined')window.removeEventListener('scroll',onScroll);root.removeEventListener('scroll',onScroll);document.removeEventListener('pointerdown',onDocPointer);document.removeEventListener('touchstart',onTouchStart);document.removeEventListener('touchmove',onTouchMove);document.removeEventListener('touchend',onTouchEnd);root.replaceChildren();records.clear();pages.clear();renderedKey=''}
  let lastScrollY=0,edgeTouch=false;
  const scrollTop=()=>watch()?(document.scrollingElement||document.documentElement).scrollTop:root.scrollTop;
@@ -55,7 +56,7 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,audioPl
  function onTouchEnd(){edgeTouch=false}
  function onScroll(){
   queueAutoLoad();
-  if(tab!=='media'||root.hidden||!watch())return;
+  if(!['media','stories'].includes(tab)||root.hidden||!watch())return;
   const y=scrollTop();
   const delta=Math.round(y-lastScrollY);
   lastScrollY=y;
@@ -72,8 +73,8 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,audioPl
   const link=$('.info-link');link.hidden=!current.group;
   link.replaceChildren();
   if(current.group){const url=safeURL(current.link);const label=document.createElement(url?'a':'span');label.textContent=url||'私密群组 · 暂无可用链接';if(url){label.href=url;label.target='_blank';label.rel='noopener noreferrer'}const caption=document.createElement('small');caption.textContent='群组链接';link.append(label,caption)}
-  $('[data-info-tab="members"]').hidden=!(current.group||current.channel);
-  avatar($('.info-avatar'),current);
+  updateTabs();
+  if(!$('.info-avatar video'))avatar($('.info-avatar'),current);
   if(!watch()){
    const header=document.querySelector('#chatAvatar img');const preview=header?.getAttribute('src');
    if(preview){const img=document.createElement('img');img.src=preview;img.alt='';$('.info-backdrop').replaceChildren(img)}
@@ -92,10 +93,20 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,audioPl
    image.onerror=()=>URL.revokeObjectURL(url);
   }catch{ /* Keep the small avatar if the full photo is unavailable. */ }
  }
+ function eligible(key){return key==='members'?!!(current.group||current.channel):key==='stories'?!(current.group||current.channel||current.bot||current.saved):true}
+ function updateTabs(){
+  const buttons=[...root.querySelectorAll('[data-info-tab]')];
+  for(const button of buttons)button.hidden=!eligible(button.dataset.infoTab)||availability.get(button.dataset.infoTab)===false;
+  $('.info-tabs').hidden=!buttons.some(b=>!b.hidden);
+  if(tab&&!buttons.some(b=>b.dataset.infoTab===tab&&!b.hidden)){
+   tab=buttons.find(b=>!b.hidden)?.dataset.infoTab||'';
+   const version=generation,id=current.id;queueMicrotask(()=>{if(valid(version,id)){const state=pages.get(pageKey());if(state?.items.length&&!state.error)paintPage();else void loadPage()}});
+  }
+ }
  function pageKey(){return tab+':'+(tab==='media'?filter:'all')}
  function paintPage(){
   for(const b of root.querySelectorAll('[data-info-tab]')){const selected=b.dataset.infoTab===tab;b.classList.toggle('selected',selected);b.setAttribute('aria-selected',String(selected))}
-  $('.info-filter').hidden=tab!=='media';const state=pages.get(pageKey()),list=$('.info-list'),key=pageKey()+':'+(state?.mediaPeer||'');list.classList.toggle('info-gallery',tab==='media');
+  $('.info-filter').hidden=tab!=='media';const state=pages.get(pageKey()),list=$('.info-list'),key=pageKey()+':'+(state?.mediaPeer||'');list.classList.toggle('info-gallery',tab==='media'||tab==='stories');
   if(renderedKey!==key){list.querySelectorAll('video,audio').forEach(el=>el.pause());list.querySelectorAll('.audio-track').forEach(row=>row.disposeMedia?.());release(list);list.replaceChildren();records=new Map();renderedKey=key}
   const next=new Map(),nodes=[];
   for(const item of state?.items||[]){
@@ -104,9 +115,9 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,audioPl
    if(tab==='members'){
     const row=document.createElement('button');row.className='info-member info-round-item';const photo=document.createElement('span');photo.className='avatar';avatar(photo,item);
     const labels=document.createElement('span');labels.className='info-member-label';const name=document.createElement('strong');name.textContent=item.title;const status=document.createElement('small');status.textContent=[item.role,conversationStatus(item)].filter(Boolean).join(' · ');labels.append(name,status);row.append(photo,labels);row.onclick=()=>onMember(item);node=row;
-   }else if(tab==='media'){
+   }else if(tab==='media'||tab==='stories'){
     if(!['image','video'].includes(item.media?.kind))continue;
-    const version=generation,id=current.id;node=galleryTile(item,state.mediaPeer,()=>valid(version,id));
+    const version=generation,id=current.id;node=(tab==='stories'?storyTile:galleryTile)(item,state.mediaPeer||id,()=>valid(version,id));
    }else if(tab==='saved'){
     if(item.media?.kind==='image'||item.media?.kind==='video'){const version=generation,id=current.id;node=galleryTile(item,state.mediaPeer,()=>valid(version,id))}
     else if(item.media?.kind==='audio'){node=createAudioRow(item,state.mediaPeer,{player,coverLoader,doc:root.ownerDocument});node.classList.add('info-round-item')}
@@ -118,47 +129,53 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,audioPl
     const icon=document.createElement('span');icon.className='info-attachment-icon';icon.textContent=ITEM_ICONS[tab]||'☆';icon.setAttribute('aria-hidden','true');
     const labels=document.createElement('span');labels.className='info-attachment-label';const label=attachmentLabel(item),title=document.createElement('strong'),detail=document.createElement('small');title.textContent=label.title;detail.textContent=label.detail;labels.append(title,detail);row.append(icon,labels);row.onclick=()=>onOpenItem(item,state.mediaPeer);node=row;
    }
-   if(tab!=='members'){node.dataset.infoMessage=String(item.id);node.infoMessage=item;node.infoPeer=state.mediaPeer||current.id}
+   if(tab!=='members'&&tab!=='stories'){node.dataset.infoMessage=String(item.id);node.infoMessage=item;node.infoPeer=state.mediaPeer||current.id}
    next.set(item.id,{signature,node});nodes.push(node);
   }
   for(const [id,record]of records)if(next.get(id)?.node!==record.node){record.node.disposeMedia?.();record.node.querySelectorAll('video,audio').forEach(el=>el.pause());release(record.node)}
-  if(tab==='media'){
+  if(tab==='media'||tab==='stories'){
    list.style.setProperty('--info-columns',columns);
    const rows=[];for(let i=0;i<nodes.length;i+=columns){const row=list.children[Math.floor(i/columns)]||document.createElement('div');row.className='info-grid-row info-round-item';reconcileChildren(row,nodes.slice(i,i+columns));rows.push(row)}reconcileChildren(list,rows);
   }else reconcileChildren(list,nodes);
   records=next;round?.refresh();
-  const message=$('.info-load-status');message.textContent=state?.error||(state?.busy&&state?.items.length?'正在加载…':!state?.items.length?(state?.busy?'正在加载…':tab==='members'?'暂无可见成员':tab==='saved'?'收藏夹中暂无来自此会话的内容':'暂无相关媒体'):'');
+  const message=$('.info-load-status');message.textContent=state?.error||(state?.busy&&state?.items.length?'正在加载…':!state?.items.length?(state?.busy?'正在加载…':tab==='members'?'暂无可见成员':tab==='stories'?'暂无可见动态':tab==='saved'?'收藏夹中暂无来自此会话的内容':'暂无相关媒体'):'');if(!tab)message.textContent='';
   const more=$('.info-more');more.hidden=!state?.error;more.disabled=!!state?.busy;more.textContent='重试加载';queueAutoLoad();
  }
- async function loadPage({refresh=false}={}){
-  const key=pageKey(),id=current.id,version=generation,selectedTab=tab,selectedFilter=filter;
-  let state=pages.get(key);if(state?.busy||state&&!state.more&&!refresh&&!state.error){paintPage();return}
+ async function loadPage({refresh=false,selectedTab=tab,selectedFilter=filter,probe=false}={}){
+  if(!selectedTab){paintPage();return}
+  const key=selectedTab+':'+(selectedTab==='media'?selectedFilter:'all'),id=current.id,version=generation;
+  let state=pages.get(key);if(probe&&state&&!state.error)return;if(state?.busy||state&&!state.more&&!refresh&&!state.error){if(pageKey()===key)paintPage();return}
   const first=!state?.items.length;
-  if(!state||refresh)state={items:[],next:0,more:true};state.busy=true;state.error='';pages.set(key,state);paintPage();
+  if(!state||refresh)state={items:[],next:0,more:true};state.busy=true;state.error='';pages.set(key,state);if(pageKey()===key)paintPage();
   try{
-   if(!state.items.length){const cached=await readCache('info-list:'+id+':'+key);if(!valid(version,id))return;if(cached?.items){Object.assign(state,cached,{busy:true});if(pageKey()===key)paintPage()}}
+   if(!probe&&!state.items.length){const cached=await readCache('info-list:'+id+':'+key);if(!valid(version,id))return;if(cached?.items){Object.assign(state,cached,{busy:true});if(pageKey()===key)paintPage()}}
    const offset=refresh||first?0:state.next;
-   const result=selectedTab==='members'?await telegram.getConversationMembers(id,offset):await telegram.getConversationItems(id,{saved:selectedTab==='saved',filter:selectedTab==='media'?selectedFilter:ITEM_FILTERS[selectedTab]||'visual',offsetId:offset});
+   const result=selectedTab==='stories'?await telegram.getProfileStories(id,{offsetId:offset,limit:probe?1:24}):selectedTab==='members'?await telegram.getConversationMembers(id,offset,probe?1:40):await telegram.getConversationItems(id,{limit:probe?1:30,saved:selectedTab==='saved',filter:selectedTab==='media'?selectedFilter:ITEM_FILTERS[selectedTab]||'visual',offsetId:offset});
    if(!valid(version,id))return;
-   const items=refresh||first?[]:state.items,seen=new Set(items.map(i=>i.id));state.items=[...items,...result.items.filter(i=>!seen.has(i.id))];state.more=!!result.more&&result.next!==offset;state.next=result.next;state.mediaPeer=result.mediaPeer;
+   const items=refresh||first?[]:state.items,seen=new Set(items.map(i=>i.id));state.items=[...items,...result.items.filter(i=>!seen.has(i.id))];state.more=!!result.more&&result.next!==offset;state.next=result.next;state.mediaPeer=result.mediaPeer||id;
+   if(selectedTab!=='media'||selectedFilter==='visual'){if(state.items.length)availability.set(selectedTab,true);else if(!result.more&&result.complete!==false)availability.set(selectedTab,false);updateTabs()}
    if(canCache(version,id))void writeCache('info-list:'+id+':'+key,{items:state.items,next:state.next,more:state.more,mediaPeer:state.mediaPeer});
   }catch(error){if(valid(version,id))state.error=/CHAT_ADMIN_REQUIRED|CHANNEL_PRIVATE|PARTICIPANTS/.test(error.errorMessage||error.message)?selectedTab==='members'?'当前账号无权查看成员':'当前账号无权查看此内容':error.errorMessage||error.message}
   finally{state.busy=false;if(valid(version,id)&&pageKey()===key)paintPage()}
  }
  async function open(dialog,initialTab){
-  itemMenu.reset();pageObserver?.disconnect();round?.destroy();round=null;stop();records=new Map();renderedKey='';owner=scope();cacheEpoch=cacheVersion();const version=++generation,id=dialog.id;current=dialog;pages=new Map();tab=initialTab||(dialog.group||dialog.channel?'members':'media');filter='visual';root.hidden=false;document.body.classList.add('info-open');
+  itemMenu.reset();pageObserver?.disconnect();round?.destroy();round=null;stop();records=new Map();renderedKey='';owner=scope();cacheEpoch=cacheVersion();const version=++generation,id=dialog.id;current=dialog;pages=new Map();availability=new Map();tab=initialTab||(dialog.group||dialog.channel?'members':'media');filter='visual';root.hidden=false;document.body.classList.add('info-open');
   root.innerHTML='<div class="info-toolbar"><button class="icon info-back" aria-label="返回聊天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button><span>会话信息</span></div><div class="info-hero"><div class="info-backdrop" aria-hidden="true"></div><div class="info-avatar avatar"></div></div><h2 class="info-name"></h2><p class="info-status"></p><div class="info-link" hidden></div><div class="info-tabs" role="tablist" aria-label="会话内容">'+INFO_TABS.map(([key,label])=>'<button role="tab" data-info-tab="'+key+'">'+label+'</button>').join('')+'</div><div class="info-filter" hidden><span>类型</span><button type="button" class="info-filter-trigger" aria-haspopup="listbox" aria-expanded="false"><span class="info-filter-value">全部</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="info-filter-menu" role="listbox" hidden><button type="button" role="option" data-filter="visual" class="selected">全部</button><button type="button" role="option" data-filter="photo">图片</button><button type="button" role="option" data-filter="video">视频</button></div></div><div class="info-list"></div><p class="info-load-status" role="status"></p><div class="info-page-sentinel" aria-hidden="true"></div><button class="info-more" hidden>重试加载</button>';
   if(win.IntersectionObserver){pageObserver=new win.IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))autoLoad()},{root:watch()?null:root,rootMargin:'180px'});pageObserver.observe($('.info-page-sentinel'))}
   $('.info-back').onclick=onBack;$('.info-more').onclick=()=>loadPage();const filterTrigger=$('.info-filter-trigger'),filterMenu=$('.info-filter-menu');filterTrigger.onclick=()=>{const show=filterMenu.hidden;filterMenu.hidden=!show;filterTrigger.setAttribute('aria-expanded',String(!show))};for(const option of filterMenu.querySelectorAll('button'))option.onclick=()=>{filter=option.dataset.filter;$('.info-filter-value').textContent=option.textContent;for(const b of filterMenu.querySelectorAll('button')){const s=b.dataset.filter===filter;b.classList.toggle('selected',s);b.setAttribute('aria-selected',String(s))}filterMenu.hidden=true;filterTrigger.setAttribute('aria-expanded','false');loadPage()};root.addEventListener('scroll',onScroll,{passive:true});if(typeof window!=='undefined')window.addEventListener('scroll',onScroll,{passive:true});lastScrollY=scrollTop();edgeTouch=false;document.addEventListener('pointerdown',onDocPointer);document.addEventListener('touchstart',onTouchStart,{passive:true});document.addEventListener('touchmove',onTouchMove,{passive:true});document.addEventListener('touchend',onTouchEnd,{passive:true});
-  for(const button of root.querySelectorAll('[data-info-tab]'))button.onclick=()=>{tab=button.dataset.infoTab;loadPage()};
-  const savedTab=root.querySelector('[data-info-tab="saved"]');savedTab.hidden=true;
-  void (async()=>{try{const result=await telegram.getConversationItems(id,{saved:true,filter:'visual',offsetId:0});if(valid(version,id)&&result.items?.length)savedTab.hidden=false}catch{}})();
+  for(const button of root.querySelectorAll('[data-info-tab]'))button.onclick=()=>{tab=button.dataset.infoTab;const state=pages.get(pageKey());if(state?.items.length&&!state.error)paintPage();else void loadPage()};
   root.classList.add('info-round');for(const child of root.children)if(!child.classList.contains('info-list')&&!child.classList.contains('audio-overlay'))child.classList.add('info-round-item');
   round=roundList(root,{rowSelector:'.info-round-item',allowChat:true,isVisible:()=>!root.hidden&&document.body.classList.contains('info-open')});
+  videoAvatar=createVideoAvatar({root:$('.info-avatar'),load:p=>telegram.downloadAvatarVideo(p.id,watch()),alive:()=>valid(version,id)});
   paintProfile(dialog);paintPage();
   try{const cached=await readCache('info-profile:'+id+':profile');if(!valid(version,id))return;if(cached)paintProfile(cached)}catch{}
   void loadPage({refresh:true});
-  try{const profile=await telegram.getConversationProfile(id);if(!valid(version,id))return;paintProfile(profile);if(canCache(version,id))void writeCache('info-profile:'+id+':profile',profile);void fullPhoto(version,id)}catch{if(valid(version,id))text('.info-status','信息同步失败，可返回后重试')}
+  try{const profile=await telegram.getConversationProfile(id);if(!valid(version,id))return;paintProfile(profile);if(canCache(version,id))void writeCache('info-profile:'+id+':profile',profile);if(profile.hasVideoAvatar)void videoAvatar.update(profile);else void fullPhoto(version,id)}catch{if(valid(version,id))text('.info-status','信息同步失败，可返回后重试')}
+  if(valid(version,id)){
+   const pending=INFO_TABS.map(([key])=>key).filter(eligible);
+   const probe=async()=>{while(pending.length&&valid(version,id)){const selectedTab=pending.shift();await loadPage({selectedTab,selectedFilter:'visual',probe:true})}};
+   void Promise.all([probe(),probe()]);
+  }
  }
  return {open,hide,closeAudioPlayer:()=>player.close()};
 }

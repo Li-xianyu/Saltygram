@@ -1,3 +1,4 @@
+import {pollMedia,mergePollResults} from './poll.js';
 import {serviceMessage} from './service-message.js';
 import {createStoryRequests} from './story-requests.js';
 import { progressRatio, downloadInParts, createTaskPool } from './media-download.js';
@@ -108,6 +109,7 @@ async function fetchDialogs() {
   return dialogs.map((d,index) => { const id = d.id.toString(); peers.set(id, d.inputEntity); entities.set(id,d.entity); const photo=d.entity?.photo; return { id, pinned:!!d.dialog.pinned, pinOrder:d.dialog.pinned?index:null, folderId:d.dialog.folderId||0, avatarKey: photo?.photoId?.toString() || '', title: d.title || '未命名', lastMessageId:d.message?.id, unread: d.unreadCount || 0, unreadMark:!!d.dialog.unreadMark, text: d.message?.message || serviceMessage(d.message?.action,{actor:displayName(d.message?.sender)})?.text || (d.message?.media ? ({image:'图片',video:'视频',audio:'音频',sticker:'贴纸',file:'文件'}[mediaInfo(d.message)?.kind]||'媒体') : ''), date: d.message?.date, personal: !!d.isUser&&!d.entity?.bot&&!d.entity?.self&&id!==memory.owner, bot:!!d.entity?.bot, group: d.isGroup, channel: d.isChannel, forum: !!d.entity?.forum, readState:{inbox:d.dialog.readInboxMaxId||0,outbox:d.dialog.readOutboxMaxId||0,unread:d.unreadCount||0,broadcast:!!d.entity?.broadcast,saved:id===memory.owner}, online:!!d.entity?.status&&d.entity.status.className==='UserStatusOnline'&&(!d.entity.status.expires||d.entity.status.expires>Date.now()/1000), status:d.entity?.status?{type:d.entity.status.className,wasOnline:d.entity.status.wasOnline,expires:d.entity.status.expires}:null }; });
 }
 export function mediaInfo(m) {
+  if(m.media?.className==='MessageMediaPoll'&&m.media.poll)return pollMedia(m.media);
   if (m.photo) {const size=(m.photo.sizes||[]).filter(s=>s.w>0&&s.h>0).sort((a,b)=>a.w*a.h-b.w*b.h).at(-1);return { width:size?.w,height:size?.h,kind: 'image', mime: 'image/jpeg', name: `photo-${m.id}.jpg`, key:m.photo.id?.toString(), size: 0 }};
   const doc = m.document; if (!doc) return m.media?.className==='MessageMediaWebPage'?null:m.media ? { kind: 'unsupported', name: m.media.className || '其他媒体' } : null;
   const mime = doc.mimeType || 'application/octet-stream';
@@ -127,8 +129,8 @@ function serialize(m,id){
  let senderId=m.senderId?.toString()||'';if(!senderId)try{senderId=utils.getPeerId(m.fromId).toString()}catch{}
  if(senderId&&!peers.has(senderId)&&peers.has(id)&&m.sender?.className==='User')peers.set(senderId,new Api.InputPeerUserFromMessage({peer:peers.get(id),msgId:m.id,userId:bigInt(senderId)}));
  const senderName=m.out?'我':displayName(m.sender||entities.get(senderId)||(isPrivate||!senderId?entity:null)),service=serviceMessage(m.action,{actor:senderName,actorId:senderId,nameOf:id=>entities.has(id)?displayName(entities.get(id)):null});
- const media=mediaInfo(m);return {id:m.id,text:service?.text||m.message||'',service,senderId,sourcePeer,sourceMessageId:m.fwdFrom?.savedFromMsgId||0,topicId:m.replyTo?.forumTopic?(m.replyTo.replyToTopId||m.replyTo.replyToMsgId||0):0,out:!!m.out,date:m.date,edited:!!m.editDate,senderName,media,
- canEdit:!!(m.out||entity?.adminRights?.editMessages)&&!m.viaBotId&&media?.kind!=='sticker'&&!!(m.message||!media),
+ const media=mediaInfo(m);return {id:m.id,text:service?.text||m.message||'',service,senderId,sourcePeer,sourceMessageId:m.fwdFrom?.savedFromMsgId||0,groupedId:m.groupedId?.toString()||'',topicId:m.replyTo?.forumTopic?(m.replyTo.replyToTopId||m.replyTo.replyToMsgId||0):0,out:!!m.out,date:m.date,edited:!!m.editDate,senderName,media,
+ canEdit:!!(m.out||entity?.adminRights?.editMessages)&&!m.viaBotId&&!['sticker','poll'].includes(media?.kind)&&!!(m.message||!media),
  canDelete:!!(m.out||isPrivate||entity?.className==='Chat'||entity?.creator||entity?.adminRights?.deleteMessages),deleteForEveryone:!!(m.out||isPrivate||entity?.creator||entity?.adminRights?.deleteMessages),private:isPrivate,channel:entity?.className==='Channel',
  replyId:m.replyTo?.forumTopic&&(!m.replyTo.replyToTopId||m.replyTo.replyToTopId===m.replyTo.replyToMsgId)?0:m.replyTo?.replyToMsgId||0,replyPeer,quote:m.replyTo?.quoteText||'',
  entities:service?.entities||(m.entities||[]).map(e=>({type:e.className,offset:e.offset,length:e.length,url:e.url,userId:e.userId?.toString()})),buttons:buttonRows(m),webpage:m.media?.webpage?.url?{url:m.media.webpage.url,title:m.media.webpage.title||m.media.webpage.siteName,description:m.media.webpage.description}:null};
@@ -144,6 +146,29 @@ async function hydrateReplies(messages,id){
 export async function getMessages(id,topic=0,options={}){
  const {c,peer}=await readyPeer(id);const result=await c.getMessages(peer,{limit:options.limit||50,...(options.ids?{ids:options.ids}:{}),offsetId:options.offsetId||0,addOffset:options.addOffset||0,...(topic?{replyTo:topic}:{})});
  const messages=result.filter(m=>m&&m.className!=='MessageEmpty').map(m=>serialize(m,id)).reverse();return hydrateReplies(messages,id);
+}
+function applyPollUpdate(update){
+ for(const [key,message]of rawMessages){if(message.media?.className!=='MessageMediaPoll'||String(message.media.poll.id)!==String(update.pollId))continue;
+  if(update.poll)message.media.poll=update.poll;
+  message.media.results=mergePollResults(message.media.results,update.results);
+  const chat=key.slice(0,key.lastIndexOf(':')),topic=message.replyTo?.forumTopic?(message.replyTo.replyToTopId||message.replyTo.replyToMsgId||1):0;
+  publish({kind:'hydrate',chat,topic,message:serialize(message,chat)});
+ }
+}
+export async function votePoll(id,messageId,indices){
+ const {c,peer}=await readyPeer(id);let message=rawMessages.get(id+':'+messageId);
+ if(!message){await getMessages(id,0,{ids:[messageId]});message=rawMessages.get(id+':'+messageId)}
+ const poll=message?.media?.poll;if(!poll)throw Error('投票消息不可用，请刷新后重试');
+ if(poll.closed||poll.closeDate&&poll.closeDate<=Date.now()/1000)throw Error('投票已结束');
+ const chosen=message.media.results?.results?.some(r=>r.chosen);
+ if(poll.quiz&&chosen)throw Error('测验提交后不能更改答案');
+ if(!Array.isArray(indices)||new Set(indices).size!==indices.length||indices.some(i=>!Number.isInteger(i)||!poll.answers[i])||!poll.multipleChoice&&indices.length>1||poll.quiz&&!indices.length)throw Error('请选择有效的投票选项');
+ const result=await c.invoke(new Api.messages.SendVote({peer,msgId:messageId,options:indices.map(i=>Buffer.from(poll.answers[i].option))}));
+ if(c!==client)throw Error('账号已切换');
+ const updates=result.updates?.filter(u=>u.className==='UpdateMessagePoll')||[];
+ for(const update of updates)applyPollUpdate(update);
+ if(updates.length)return serialize(rawMessages.get(id+':'+messageId),id);
+ const [fresh]=await getMessages(id,0,{ids:[messageId]});return fresh;
 }
 export async function sendMessage(id,text,topic=0,replyTo=0){
  if(!text.trim()||text.length>4096)throw Error('消息须为 1–4096 个字符');const {c,peer}=await readyPeer(id);
@@ -245,6 +270,15 @@ export async function downloadAvatar(id,big=false) {
  const c=await getClient();const data=await c.downloadProfilePhoto(entity,{isBig:big});
  return data?.length ? new Blob([new Uint8Array(data)],{type:'image/jpeg'}) : null;
 }
+export async function downloadAvatarVideo(id,small=false){
+ const {c,peer}=await readyPeer(id),e=entities.get(id),store=storiesFor(c);
+ let photo=store.get('avatar-photo:'+id);
+ if(!photo&&e?.className==='User'&&e.photo?.hasVideo){const result=await store.run('avatar-lookup:'+id+':'+e.photo.photoId,()=>c.invoke(new Api.photos.GetUserPhotos({userId:utils.getInputUser(peer),offset:0,maxId:bigInt.zero,limit:1})));photo=result.photos?.find(p=>String(p.id)===String(e.photo.photoId));if(photo)store.put('avatar-photo:'+id,photo)}
+ if(c!==client)throw Error('账号已切换');
+ const sizes=(photo?.videoSizes||[]).filter(s=>s.className==='VideoSize').sort((a,b)=>a.w*a.h-b.w*b.h),size=small?sizes[0]:sizes.at(-1);
+ if(!size)return null;
+ return store.run('avatar-video:'+id+':'+photo.id+':'+size.type,async()=>{if(c!==client)throw Error('账号已切换');const data=await c.downloadMedia(photo,{thumb:size.type});if(c!==client)throw Error('账号已切换');return data?.length?new Blob([data],{type:'video/mp4'}):null});
+}
 
 function buttonRows(m){return (m.replyMarkup?.rows||[]).map((row,ri)=>row.buttons.map((b,bi)=>({text:b.text,type:b.className,url:b.url,copy:b.copyText,row:ri,col:bi}))) }
 export async function pressButton(id,messageId,row,col){
@@ -289,6 +323,7 @@ function installRealtime(source){
   if(source!==client)return;
   if(update instanceof UpdateConnectionState){publish({kind:'connection',online:update.state===UpdateConnectionState.connected});return}
   const type=update.className;
+  if(type==='UpdateMessagePoll'){applyPollUpdate(update);return}
   if(type==='UpdateDialogUnreadMark'){try{publish({kind:'read',chat:utils.getPeerId(update.peer.peer).toString(),unreadMark:!!update.unread})}catch{}return}
   if(type==='UpdateUserTyping'){try{publish({kind:'typing',chat:update.userId.toString(),typing:true,action:update.action?.className})}catch{}return}
   if(type==='UpdateChatUserTyping'){try{publish({kind:'typing',chat:utils.getPeerId(new Api.PeerChat({chatId:update.chatId})).toString(),typing:true,user:utils.getPeerId(update.fromId).toString(),action:update.action?.className})}catch{}return}
@@ -321,9 +356,10 @@ export async function getConversationProfile(id){
  else if(base.channel)result=await c.invoke(new Api.channels.GetFullChannel({channel:peer}));
  else result=await c.invoke(new Api.messages.GetFullChat({chatId:bigInt(id.replace(/^-/,''))}));
  if(c!==client)throw Error('账号已切换');rememberEntities(result);const e=entities.get(id),full=result.fullChat||result.fullUser;
+ const profilePhoto=full?.profilePhoto||full?.chatPhoto;if(profilePhoto)storiesFor(c).put('avatar-photo:'+id,profilePhoto);
  let online=full?.onlineCount;
  if(base.group&&online===undefined){try{online=(await c.invoke(new Api.messages.GetOnlines({peer}))).onlines}catch{}}
- return {...base,...personSummary(e),about:full?.about||'',members:full?.participantsCount??full?.participants?.participants?.length??e.participantsCount,online,
+ return {...base,...personSummary(e),hasVideoAvatar:!!e.photo?.hasVideo||!!profilePhoto?.videoSizes?.some(s=>s.className==='VideoSize'),about:full?.about||'',members:full?.participantsCount??full?.participants?.participants?.length??e.participantsCount,online,
  link:base.group?(e.username?'https://t.me/'+e.username:full?.exportedInvite?.link||''):''};
 }
 export async function getOnlineCount(id){const {c,peer}=await readyPeer(id);try{return (await c.invoke(new Api.messages.GetOnlines({peer}))).onlines}catch{return undefined}}
@@ -353,7 +389,7 @@ export async function getProfileStories(id,{offsetId=0,limit=24}={}){
   }
  }
  const rows=pinned?.stories||[],next=rows.at(-1)?.id||0;
- return {items:[...all.values()].sort((a,b)=>b.id-a.id),next,more:rows.length>0&&next!==offsetId};
+ return {items:[...all.values()].sort((a,b)=>b.id-a.id),next,more:rows.length>0&&next!==offsetId,complete:results.every(r=>r.status==='fulfilled')};
 }
 export async function downloadStory(id,storyId,thumbnail=false){
  const {c,peer}=await readyPeer(id),store=storiesFor(c),key='story:'+id+':'+storyId;

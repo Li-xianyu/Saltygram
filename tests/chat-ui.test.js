@@ -10,16 +10,16 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  globalThis.Option=function(text,value){const o=document.createElement('option');o.textContent=text;o.value=value;return o};
  for(const select of document.querySelectorAll('select')){let value='0';Object.defineProperty(select,'value',{get:()=>value,set:v=>value=v});select.add=o=>select.append(o)}
  for(const dialog of document.querySelectorAll('dialog')){dialog.showModal=()=>dialog.open=true;dialog.close=()=>dialog.open=false}
- const originalInterval=globalThis.setInterval;globalThis.testIntervals=[];globalThis.setInterval=(fn,delay)=>{globalThis.testIntervals.push(delay);return 0};globalThis.uiCalls=[];globalThis.uiMediaCalls=[];globalThis.uiActions=[];
+ const originalInterval=globalThis.setInterval;globalThis.testIntervals=[];const intervalTasks=[];globalThis.setInterval=(fn,delay)=>{globalThis.testIntervals.push(delay);intervalTasks.push({fn,delay});return 0};globalThis.uiCalls=[];globalThis.uiMediaCalls=[];globalThis.uiActions=[];
  const adapter=`
  export const subscribeUpdates=listener=>{globalThis.receiveLive=listener;return()=>{}};export const cacheScope=()=> 'test-account';export const settings=()=>({session:'test-session'});export const restore=()=>new Promise(resolve=>globalThis.finishRestore=resolve);
  export const getOwnProfile=async()=>({id:'1',title:'Test Owner',username:'test_owner',about:'Test bio',phone:'123123',avatarKey:'owner-photo'});export const logout=async()=>{globalThis.uiActions.push({type:'logout'});throw Error('模拟退出失败')};export const listAccounts=()=>[];export const getContacts=async()=>[{id:'-2000',title:'Contact Alice',phone:'123456',avatarKey:'contact-photo'},{id:'-3000',title:'Contact Bob',phone:'654321'}];
  export const getDialogs=async()=>[{id:'-1001',title:'测试群',pinned:true,pinOrder:0,forum:true,group:true,avatarKey:'p1'},{id:'-2000',title:'另一个聊天',unread:0}];
- export const getConversationInfo=async(id)=>{const user=id==='-2000',saved=globalThis.uiActions.find(a=>a.type==='contact'&&a.id===id);return {id,title:saved?saved.first+' '+saved.last:user?'另一个聊天':'测试群',firstName:saved?.first||'Alice',lastName:saved?.last||'',user,contact:!!saved,group:!user,forum:!user,canAddContact:user,canClear:true,canDelete:user,canLeave:!user}};
+ export const getConversationInfo=async(id)=>{const user=id==='-2000'||id==='42',saved=globalThis.uiActions.find(a=>a.type==='contact'&&a.id===id);return {id,title:saved?saved.first+' '+saved.last:id==='42'?'Actor Alice':user?'另一个聊天':'测试群',firstName:saved?.first||'Alice',lastName:saved?.last||'',user,contact:!!saved,group:!user,forum:!user,canAddContact:user,canClear:true,canDelete:user,canLeave:!user}};
  export const resolvePeer=async reference=>{globalThis.uiActions.push({type:'resolve',reference});return reference==='42'?{id:'42',title:'Actor Alice',user:true,personal:true,username:'actor'}:{id:'-1001',title:'测试群',group:true,forum:true}};
  export const getConversationProfile=async id=>id==='42'?{id:'42',title:'Actor Alice',user:true,username:'actor',about:'Actor bio t.me/example @actor'}:({...await getConversationInfo(id),members:12,online:2,link:'https://t.me/example'});
  export const getConversationMembers=async()=>({items:[{id:'member',title:'成员'}],next:1,more:false});
- export const getBotCommands=async()=>[{command:'help',description:'帮助'},{command:'start',description:'开始'}];export const getProfileStories=async()=>({items:[],next:0,more:false});
+ export const getBotCommands=async()=>[{command:'help',description:'帮助'},{command:'start',description:'开始'}];export const getProfileStories=async()=>({items:globalThis.showRegressionStory?[{id:700,media:{kind:'image',key:'story-photo'}}]:[],next:0,more:false});export const downloadStory=async()=>new Blob(['story'],{type:'image/jpeg'});
  export const getConversationItems=async()=>({items:[],next:0,more:false});
  export const addContact=async(id,first,last)=>{globalThis.uiActions.push({type:'contact',id,first,last});return {id,title:first+' '+last,contact:true}};
  export const markConversationUnread=async(id,unread=true)=>{globalThis.uiActions.push({type:'markUnread',id,unread})};
@@ -33,7 +33,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  {id:104,text:'',date:1,media:{kind:'video',key:'vid4',mime:'video/mp4',name:'不显示视频名称.mp4',duration:65,width:1280,height:720,size:120}},
  {id:105,text:'我的消息',date:1,out:true,canEdit:true,canDelete:true,deleteForEveryone:true,private:true,senderName:'我'},
  {id:106,text:'回复内容',date:1,replyId:101,replyPeer:'-1001',reply:{id:101,text:'打开链接',senderName:'Peer'}},
- ...Array.from({length:44},(_,i)=>i===0?{id:107,text:'from actor',date:1,senderName:'Actor Alice',senderId:'42'}:i===2?{id:109,text:'Actor Alice通过邀请链接加入群组',date:1,senderName:'Actor Alice',senderId:'42',service:{type:'MessageActionChatJoinedByLink'},entities:[{type:'MessageEntityMentionName',offset:0,length:11,userId:'42'}]}:i===1?{id:108,text:'',date:1,media:{kind:'audio',audioTitle:'Shared Song',performer:'Artist',name:'secret-name.flac',duration:120}}:({id:107+i,text:'消息'+(107+i),date:1}))
+ ...Array.from({length:44},(_,i)=>i===5?{id:112,date:1,text:'',media:{kind:'poll',key:'poll-1',question:'Choose',answers:[{text:'A',option:[0],voters:0},{text:'B',option:[1],voters:0}],total:0}}:i===3||i===4?{id:107+i,groupedId:'large-album-id',senderId:'42',senderName:'Actor Alice',date:1,text:i===3?'Album caption':'',media:{kind:'image',key:'album-'+i}}:i===0?{id:107,text:'from actor',date:1,senderName:'Actor Alice',senderId:'42'}:i===2?{id:109,text:'Actor Alice通过邀请链接加入群组',date:1,senderName:'Actor Alice',senderId:'42',service:{type:'MessageActionChatJoinedByLink'},entities:[{type:'MessageEntityMentionName',offset:0,length:11,userId:'42'}]}:i===1?{id:108,text:'',date:1,media:{kind:'audio',audioTitle:'Shared Song',performer:'Artist',name:'secret-name.flac',duration:120}}:({id:107+i,text:'消息'+(107+i),date:1}))
  ]};
  export const downloadMedia=async(chat,id,progress,thumbnail)=>{globalThis.uiMediaCalls.push({id,thumbnail});return new Blob(['media'],{type:thumbnail?'image/jpeg':'video/mp4'})};export const downloadAvatar=async()=>new Blob(['avatar'],{type:'image/jpeg'});
  export const pressButton=async()=>({message:'完成'});
@@ -50,7 +50,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  `;
  let app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
  app=app.replace("'./telegram.js'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(adapter).toString('base64')));
- for(const file of ['chat-membership.js','profile-stories.js','button-label.js','telegram-links.js','service-message.js','audio-player.js','video-policy.js','media-viewer.js','page-gestures.js','swipe-close.js','cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
+ for(const file of ['poll.js','message-albums.js','video-avatar.js','chat-membership.js','profile-stories.js','button-label.js','telegram-links.js','service-message.js','audio-player.js','video-policy.js','media-viewer.js','page-gestures.js','swipe-close.js','cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
  app=app.replace("'pako'",JSON.stringify(import.meta.resolve('pako')));
  app=app.replace("'qrcode'",JSON.stringify(import.meta.resolve('qrcode')));
  try{
@@ -105,6 +105,9 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   const audioRow=document.querySelector('[data-message-id="108"] .audio-track');assert.ok(audioRow);assert.equal(audioRow.querySelector('strong').textContent,'Shared Song');assert.equal(audioRow.querySelector('.media-action'),null);assert.ok(!audioRow.textContent.includes('secret-name.flac'));
   assert.ok(document.querySelector('.dialog-row .avatar img'));
   assert.equal(document.querySelector('#topicsWrap').hidden,false);
+  const pollCard=document.querySelector('[data-message-id="112"] .poll-card');assert.equal(pollCard.querySelector('.poll-question').textContent,'Choose');assert.equal(pollCard.querySelectorAll('.poll-option').length,2);
+  const album=document.querySelector('#messages .media-album');assert.ok(album);assert.equal(album.querySelectorAll('.album-cell').length,2);assert.equal(album.closest('.message-row').querySelectorAll('.message-time').length,1);assert.equal(album.closest('.bubble').querySelector('.album-caption').textContent,'Album caption');
+  const firstPhoto=album.querySelector('[data-album-message="110"]');album.closest('.message-row').oncontextmenu({target:firstPhoto,preventDefault(){},stopPropagation(){},clientX:100,clientY:100});document.querySelector('#messageMenu button').onclick();assert.equal(document.querySelector('#composeContextText').textContent,'Album caption');document.querySelector('#cancelCompose').onclick();
   const videoCard=document.querySelector('#messages .video-card');
   assert.ok(videoCard.querySelector('.video-poster').getAttribute('src')?.startsWith('blob:'));
   assert.ok(videoCard.querySelector('button[aria-label="播放视频"]'));
@@ -112,7 +115,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   assert.ok(!document.querySelector('#messages').textContent.includes('不显示视频名称.mp4'));
   assert.ok(!globalThis.uiMediaCalls.some(c=>c.id===104&&!c.thumbnail),'video body must wait for user click');
   await videoCard.querySelector('.video-play').onclick();
-  for(let i=0;i<20;i++)await new Promise(r=>setImmediate(r));assert.equal(document.querySelector('#mediaViewer').open,true);assert.equal(videoCard.querySelector('video'),null);assert.ok(document.querySelector('#viewerContent video.inline-video').src?.startsWith('blob:'));document.querySelectorAll('#viewerContent video').forEach(v=>v.pause=()=>{});document.querySelector('#closeViewer').onclick();
+  for(let i=0;i<100&&!document.querySelector('#viewerContent video.inline-video');i++)await new Promise(r=>setTimeout(r,2));assert.equal(document.querySelector('#mediaViewer').open,true);assert.equal(videoCard.querySelector('video'),null);assert.ok(document.querySelector('#viewerContent video.inline-video')?.src?.startsWith('blob:'),document.querySelector('#viewerContent').textContent);document.querySelectorAll('#viewerContent video').forEach(v=>v.pause=()=>{});document.querySelector('#closeViewer').onclick();
   assert.ok(globalThis.uiMediaCalls.some(c=>c.id===104&&!c.thumbnail));
   assert.equal(videoCard.querySelector('video'),null);
   videoCard.querySelector('.video-expand').onclick();for(let i=0;i<20;i++)await new Promise(r=>setImmediate(r));assert.equal(document.querySelector('#mediaViewer').open,true);assert.ok(parseFloat(document.querySelector('#viewerContent .video-card').style.width)>0);document.querySelectorAll('#viewerContent video').forEach(v=>v.pause=()=>{});document.querySelector('#closeViewer').onclick();assert.equal(document.querySelector('#mediaViewer').open,false);
@@ -238,6 +241,22 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   const composer=document.querySelector('#composer'),message=document.querySelector('#message');message.value='/';await composer.onsubmit({preventDefault(){}});assert.equal(message.value,'');assert.equal(document.querySelectorAll('.bot-command-list button').length,2);assert.equal(document.querySelector('.bot-command-list strong').textContent,'/help');
   swipeBack('main');assert.equal(document.body.classList.contains('chat-open'),false);
   assert.equal(document.body.classList.contains('swipe-route-chat'),false);assert.equal(document.body.classList.contains('swipe-route-info'),false);
+  // A linked stranger has no server dialog. Syncing while viewing a story
+  // must not remove the active peer needed by the chat header.
+  globalThis.showRegressionStory=true;
+  const strangerLink=document.createElement('a');strangerLink.href='tg://user?id=42';document.body.append(strangerLink);strangerLink.dispatchEvent(new window.Event('click',{bubbles:true,cancelable:true}));
+  for(let i=0;i<30;i++)await new Promise(r=>setImmediate(r));
+  await document.querySelector('#peerProfileChat').onclick();assert.equal(document.querySelector('#chatTitle').textContent,'Actor Alice');
+  document.querySelector('#chatIdentity').onclick();for(let i=0;i<50;i++)await new Promise(r=>setImmediate(r));
+  document.querySelector('[data-info-tab="stories"]').onclick();
+  for(let i=0;i<100&&!document.querySelector('#conversationInfo .info-media-tile img');i++)await new Promise(r=>setTimeout(r,2));
+  document.querySelector('#conversationInfo .info-media-tile').onclick();
+  for(let i=0;i<30;i++)await new Promise(r=>setImmediate(r));assert.equal(document.querySelector('#mediaViewer').open,true);
+  await intervalTasks.find(t=>t.delay===30000).fn();
+  assert.ok(document.querySelector('#dialogs [data-chat-id="42"]'),'active linked peer survives a server snapshot without that dialog');
+  document.querySelector('#closeViewer').onclick();document.querySelector('.info-back').onclick();assert.equal(document.body.classList.contains('info-open'),false);
+  document.querySelector('#chatIdentity').onclick();for(let i=0;i<30;i++)await new Promise(r=>setImmediate(r));
+  assert.equal(document.body.classList.contains('info-open'),true);assert.equal(document.querySelector('.info-name').textContent,'Actor Alice');document.querySelector('.info-back').onclick();strangerLink.remove();
  }finally{globalThis.setInterval=originalInterval}
 });
 

@@ -39,7 +39,7 @@ test('viewer video reserves its aspect ratio and supports playback, seeking, mut
  video.play=async()=>{video.paused=false;f.event(video,'play')};video.pause=()=>{video.paused=true;f.event(video,'pause')};
  card.append(video);f.content.append(card);await Promise.resolve();f.event(video,'loadedmetadata');
  assert.ok(parseFloat(card.style.width)>0);assert.equal(video.controls,false);
- const seek=f.root.querySelector('input');seek.value='500';seek.oninput();assert.equal(video.currentTime,60);
+ const seek=f.root.querySelector('[aria-label="播放进度"]');seek.value='500';seek.oninput();assert.equal(video.currentTime,60);
  f.root.querySelector('[aria-label="播放"]').onclick();assert.equal(video.paused,false);
  f.root.querySelector('[aria-label="暂停"]').onclick();assert.equal(video.paused,true);
  f.root.querySelector('[aria-label="静音"]').onclick();assert.equal(video.muted,true);
@@ -62,4 +62,43 @@ test('video previews shrink proportionally within both width and height limits o
  for(const [w,h]of [[1920,1080],[1080,1920],[100,2000],[3000,100],[80,60]])for(const [mw,mh]of [[320,360],[160,134],[220,200]]){
   const box=fitVideoPreview(w,h,mw,mh);assert.ok(box.width<=mw+.001);assert.ok(box.height<=mh+.001);assert.ok(box.width<=w&&box.height<=h);assert.ok(Math.abs(box.width/box.height-w/h)<.0001);
  }
+});
+
+test('story video uses the common fitted video surface and corrects fallback dimensions from metadata',async()=>{
+ const f=fixture(),card=f.doc.createElement('div'),video=f.doc.createElement('video');card.className='video-card';card.dataset.width='720';card.dataset.height='1280';
+ Object.assign(video,{duration:NaN,currentTime:0,paused:true,readyState:0});card.append(video);f.content.append(card);await Promise.resolve();
+ assert.equal(video.classList.contains('inline-video'),true,'raw story videos must use the same surface as chat videos');
+ Object.assign(video,{videoWidth:1920,videoHeight:1080,duration:60});f.event(video,'loadedmetadata');
+ const width=parseFloat(card.style.width),height=parseFloat(card.style.height);
+ assert.ok(Math.abs(width/height-1920/1080)<.0001);assert.ok(Math.hypot(width*1.4,height*1.4)<=360*.94+.001);
+});
+
+test('switching videos and loading a new source clears the timeline before metadata is ready',async()=>{
+ const f=fixture(),card=f.doc.createElement('div'),first=f.doc.createElement('video');card.className='video-card';
+ Object.assign(first,{duration:100,currentTime:75,paused:true,readyState:4});card.append(first);f.content.append(card);await Promise.resolve();
+ const seek=f.root.querySelector('[aria-label="播放进度"]');assert.equal(seek.value,'750');assert.equal(seek.style.getPropertyValue('--viewer-progress'),'75%');
+ const next=f.doc.createElement('video');Object.assign(next,{duration:NaN,currentTime:0,paused:true,readyState:0});first.replaceWith(next);await Promise.resolve();
+ assert.equal(seek.value,'0');assert.equal(seek.disabled,true);assert.equal(seek.style.getPropertyValue('--viewer-progress'),'0%');assert.equal(f.root.querySelector('.viewer-time').textContent,'0:00 / 0:00');
+ Object.assign(next,{duration:80,currentTime:0});f.event(next,'loadedmetadata');assert.equal(seek.disabled,false);assert.equal(seek.value,'0');
+ next.currentTime=20;f.event(next,'timeupdate');assert.equal(seek.value,'250');f.event(next,'emptied');assert.equal(seek.value,'0');assert.equal(seek.style.getPropertyValue('--viewer-progress'),'0%');
+ next.duration=Infinity;f.event(next,'durationchange');assert.equal(seek.value,'0');assert.equal(seek.disabled,true);assert.ok(!f.root.querySelector('.viewer-time').textContent.includes('NaN'));
+});
+
+test('volume button opens a real volume slider, updates the icon and restores sound from zero',async()=>{
+ const f=fixture(),card=f.doc.createElement('div'),video=f.doc.createElement('video');card.className='video-card';Object.assign(video,{duration:100,currentTime:0,volume:1,muted:false,paused:true});card.append(video);f.content.append(card);await Promise.resolve();
+ const button=f.root.querySelector('[aria-label="音量：100%"]'),panel=f.root.querySelector('.viewer-volume'),volume=f.root.querySelector('[aria-label="音量大小"]');
+ button.onclick();assert.equal(panel.hidden,false);assert.equal(button.getAttribute('aria-expanded'),'true');
+ volume.value='35';volume.oninput();assert.equal(video.volume,.35);assert.equal(video.muted,false);assert.equal(panel.querySelector('.viewer-volume-value').textContent,'35%');
+ const original=button.innerHTML;panel.querySelector('[aria-label="静音"]').onclick();assert.equal(video.muted,true);assert.notEqual(button.innerHTML,original);assert.equal(button.getAttribute('aria-label'),'音量：静音');
+ panel.querySelector('[aria-label="取消静音"]').onclick();assert.equal(video.muted,false);assert.equal(video.volume,.35);
+ volume.value='0';volume.oninput();assert.equal(video.muted,true);assert.equal(video.volume,0);panel.querySelector('[aria-label="取消静音"]').onclick();assert.equal(video.volume,.35);assert.equal(video.muted,false);
+ f.event(f.content,'click');assert.equal(panel.hidden,true);button.onclick();f.event(f.root,'close');assert.equal(panel.hidden,true);
+});
+
+test('playback updates preserve pressed button glyphs until their actual state changes',async()=>{
+ const f=fixture(),card=f.doc.createElement('div'),video=f.doc.createElement('video');card.className='video-card';Object.assign(video,{duration:100,currentTime:0,volume:1,muted:false,paused:false});card.append(video);f.content.append(card);await Promise.resolve();
+ const volume=f.root.querySelector('[aria-label="音量：100%"]'),play=f.root.querySelector('[aria-label="暂停"]'),glyph=volume.firstChild,playGlyph=play.firstChild;
+ f.event(volume,'pointerdown');for(let i=1;i<20;i++){video.currentTime=i;f.event(video,'timeupdate')}
+ assert.equal(volume.firstChild,glyph,'updates must not replace the element beneath a pressed finger');assert.equal(play.firstChild,playGlyph);f.event(volume,'pointerup');volume.onclick();assert.equal(f.root.querySelector('.viewer-volume').hidden,false);
+ video.muted=true;f.event(video,'volumechange');assert.notEqual(volume.firstChild,glyph,'a real mute change updates the icon');
 });

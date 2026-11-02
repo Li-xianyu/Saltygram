@@ -17,10 +17,10 @@ test('media has only three image/video filters and music is an independent categ
  let roundOptions,destroyed=0;
  const page=createConversationInfo({root,watch:()=>true,avatar(){},galleryTile:()=>{const button=document.createElement('button');button.className='info-media-tile';return button},readCache:async()=>null,writeCache:async()=>{},roundList:(r,options)=>{roundOptions=options;return {refresh(){},destroy(){destroyed++}}},telegram:{getConversationProfile:async()=>({id:'chat',title:'会话'}),getConversationItems:async(id,options)=>{calls.push(options);return {items:options.filter==='audio'?[{id:3,media:{kind:'audio',audioTitle:'Song',performer:'Artist',duration:125}}]:items,more:false,mediaPeer:id}}}});
  await page.open({id:'chat',title:'会话'});await ticks();
- assert.deepEqual(INFO_TABS.map(t=>t[0]),['members','media','saved','music','files','voice','links']);
+ assert.deepEqual(INFO_TABS.map(t=>t[0]),['stories','members','media','saved','music','files','voice','links']);
  assert.deepEqual([...root.querySelectorAll('.info-filter-menu button')].map(o=>o.textContent),['全部','图片','视频']);
  assert.equal(root.querySelectorAll('.info-media-tile').length,2);assert.equal(root.querySelector('.info-list').textContent,'');assert.equal(root.querySelectorAll('.info-grid-row').length,1);
- root.querySelector('[data-info-tab="music"]').onclick();await ticks();assert.equal(calls.at(-1).filter,'audio');assert.equal(root.querySelector('.info-filter').hidden,true);assert.equal(root.querySelector('.info-attachment strong').textContent,'Song');
+ root.querySelector('[data-info-tab="music"]').onclick();await ticks();assert.ok(calls.some(c=>c.filter==='audio'));assert.equal(root.querySelector('.info-filter').hidden,true);assert.equal(root.querySelector('.info-attachment strong').textContent,'Song');
  assert.deepEqual(attachmentLabel({media:{audioTitle:'Song',performer:'Artist',duration:125}}),{title:'Song',detail:'Artist · 2:05'});
  assert.equal(roundOptions.allowChat,true);assert.equal(roundOptions.rowSelector,'.info-round-item');page.hide();assert.equal(destroyed,1);
 });
@@ -62,4 +62,35 @@ test('all information tabs automatically fetch the next page near the bottom wit
   root.querySelector('[data-info-tab="media"]').onclick();
   for(const filter of ['photo','video']){root.querySelector('[data-filter="'+filter+'"]').onclick();await waitFor(filter)}
  }finally{page.hide();window.HTMLElement.prototype.getBoundingClientRect=oldRect}
+});
+
+test('private chat information exposes stories with its own gallery and cursor instead of message media',async()=>{
+ const {document}=parseHTML('<body><section hidden></section></body>');globalThis.document=document;
+ const root=document.querySelector('section'),calls=[],opened=[];
+ const page=createConversationInfo({root,watch:()=>true,avatar(){},galleryTile:()=>document.createElement('button'),storyTile:(item,peer)=>{const node=document.createElement('button');node.className='story-test-tile';node.onclick=()=>opened.push([item.id,peer]);return node},readCache:async()=>null,writeCache:async()=>{},roundList:()=>({refresh(){},destroy(){}}),telegram:{
+  getConversationProfile:async id=>({id,user:true,title:'Friend'}),
+  getConversationItems:async()=>({items:[],more:false}),
+  getProfileStories:async(id,{offsetId})=>{calls.push([id,offsetId]);return {items:[{id:20-offsetId,media:{kind:'video'}}],next:10,more:offsetId===0}}
+ }});
+ await page.open({id:'friend',personal:true,title:'Friend'});await ticks();
+ assert.equal(root.querySelector('[data-info-tab="stories"]').hidden,false);
+ root.querySelector('[data-info-tab="stories"]').onclick();await ticks();
+ assert.deepEqual(calls,[['friend',0]]);assert.equal(root.querySelector('.info-filter').hidden,true);assert.equal(root.querySelectorAll('.info-grid-row').length,1);
+ const tile=root.querySelector('.story-test-tile');assert.equal(tile.hasAttribute('data-info-message'),false,'story ids must not be treated as chat message ids');tile.onclick();assert.deepEqual(opened,[[20,'friend']]);
+ root.querySelector('.info-more').onclick();await ticks();assert.deepEqual(calls,[['friend',0],['friend',10]]);assert.equal(root.querySelectorAll('.story-test-tile').length,2);
+ page.hide();await page.open({id:'bot',bot:true,title:'Bot'});assert.equal(root.querySelector('[data-info-tab="stories"]').hidden,true);page.hide();
+});
+
+test('tabs hide only after confirmed empty results, stories come first and failures remain available',async()=>{
+ const {document}=parseHTML('<body><section hidden></section></body>');globalThis.document=document;const root=document.querySelector('section');let emptyStories=false;
+ const page=createConversationInfo({root,watch:()=>true,avatar(){},galleryTile:()=>document.createElement('button'),readCache:async()=>null,writeCache:async()=>{},roundList:()=>({refresh(){},destroy(){}}),telegram:{
+  getConversationProfile:async id=>({id,user:true,title:'Friend'}),
+  getProfileStories:async()=>({items:emptyStories?[]:[{id:1,media:{kind:'image'}}],next:1,more:false}),
+  getConversationItems:async(id,options)=>{if(options.filter==='audio')throw Error('network');return {items:[],more:false}}
+ }});
+ await page.open({id:'friend',title:'Friend'});await ticks();
+ assert.equal([...root.querySelectorAll('[data-info-tab]')].find(b=>!b.hidden).dataset.infoTab,'stories');
+ for(const tab of ['media','saved','files','voice','links'])assert.equal(root.querySelector('[data-info-tab="'+tab+'"]').hidden,true,tab+' is confirmed empty');
+ assert.equal(root.querySelector('[data-info-tab="music"]').hidden,false,'network errors are not proof of empty content');
+ page.hide();emptyStories=true;await page.open({id:'friend',title:'Friend'});await ticks();assert.equal(root.querySelector('[data-info-tab="stories"]').hidden,true);page.hide();
 });

@@ -37,3 +37,24 @@ test('pins retain server order above new messages and update styling without rep
  const unpinned={...a,pinned:false,pinOrder:null};update([unpinned,b,c]);assert.deepEqual([...root.children].map(r=>r.dataset.chatId),['b','c','a']);assert.equal(rows[0].classList.contains('pinned'),false);assert.equal(rows[0].querySelector('.pin-indicator').hidden,true);
  assert.deepEqual(orderDialogs([b,c,a]).map(d=>d.id),['a','b','c']);
 });
+
+test('updates beneath a held finger change unread text immediately but postpone reordering until release',async()=>{
+ const {document,window}=parseHTML('<div></div>');globalThis.document=document;const root=document.querySelector('div');
+ const update=createDialogList(root,{select(){},avatar(){},formatTime:()=>''});const a={id:'a',title:'A',date:2},b={id:'b',title:'B',date:1};update([a,b]);
+ root.dispatchEvent(new window.Event('pointerdown',{bubbles:true}));update([a,{...b,date:3,text:'new',unread:1}]);assert.deepEqual([...root.children].map(r=>r.dataset.chatId),['a','b']);assert.equal(root.children[1].querySelector('.badge').textContent,'1');
+ window.dispatchEvent(new window.Event('pointerup'));await new Promise(r=>setTimeout(r,210));assert.deepEqual([...root.children].map(r=>r.dataset.chatId),['b','a']);
+});
+
+test('promoting the first visible chat does not drag the scrolled viewport to the top',()=>{
+ const {document}=parseHTML('<div></div>');globalThis.document=document;const root=document.querySelector('div');root.getBoundingClientRect=()=>({top:0,bottom:150});
+ const update=createDialogList(root,{select(){},avatar(){},formatTime:()=>''});const list=['a','b','c','d','e'].map((id,i)=>({id,title:id,date:5-i}));update(list);root.scrollTop=100;
+ for(const row of root.children)row.getBoundingClientRect=()=>{const top=[...root.children].indexOf(row)*50-root.scrollTop;return {top,bottom:top+50}};
+ update(list.map(d=>d.id==='c'?{...d,date:10}:d));assert.equal(root.scrollTop,100,'use a stable neighboring row instead of following promoted c to the top');
+});
+
+test('watch lists preserve the document scroll anchor in zoomed coordinates',()=>{
+ const {document,window}=parseHTML('<body><div></div></body>');globalThis.document=document;window.innerHeight=150;const root=document.querySelector('div'),scroller={scrollTop:0};const zoom=1.4;
+ root.getBoundingClientRect=()=>({top:0,bottom:150});const update=createDialogList(root,{select(){},avatar(){},formatTime:()=>'',getScroller:()=>scroller,getZoom:()=>zoom});const list=['a','b','c','d','e'].map((id,i)=>({id,title:id,date:5-i}));update(list);scroller.scrollTop=100;
+ for(const row of root.children)row.getBoundingClientRect=()=>{const top=([...root.children].indexOf(row)*50-scroller.scrollTop)*zoom;return {top,bottom:top+50*zoom}};
+ update(list.map(d=>d.id==='e'?{...d,date:10}:d));assert.equal(scroller.scrollTop,150);assert.equal(root.scrollTop||0,0,'the nested list is not the watch scroller');
+});
