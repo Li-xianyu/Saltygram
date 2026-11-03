@@ -50,7 +50,7 @@ const objectURLs=new Set();
 function scopeKey(key){const scope=telegram.cacheScope();return scope?scope+':'+key:null}
 async function cachedBlob(key,load){const generation=cacheGeneration();const scoped=scopeKey(key);const hit=scoped?await cacheGet(scoped):null;if(hit instanceof Blob)return hit;const blob=await load();if(blob&&scoped&&cacheGeneration()===generation)await cachePut(scoped,blob);return blob}
 async function snapshotGet(key){const scoped=scopeKey('snapshot:'+key);return scoped?cacheGet(scoped):null}
-function snapshotPut(key,value){const scoped=scopeKey('snapshot:'+key);if(scoped)return cachePut(scoped,value)}
+function snapshotPut(key,value){const scoped=scopeKey('snapshot:'+key);if(scoped)return cachePut(scoped,key==='dialogs'?value.map(d=>({...d,topicId:0,topicTitle:undefined})):value)}
 const stickerCache=createStickerCache({telegram,scope:()=>telegram.cacheScope(),generation:cacheGeneration,read:cacheGet,write:cachePut,has:cacheHas,putBlob:(key,blob)=>cachePut(key,blob,{evict:false}),ready:()=>connected&&!document.hidden&&navigator.onLine!==false&&!navigator.connection?.saveData&&!loading&&!document.querySelector('#viewerContent video'),schedule:fn=>setTimeout(fn,8000)});
 window.addEventListener('online',()=>{if(connected)stickerCache.start()});
 document.addEventListener('visibilitychange',()=>{if(connected&&!document.hidden)stickerCache.start()});
