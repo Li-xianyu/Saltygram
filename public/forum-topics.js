@@ -1,12 +1,13 @@
 import {reconcileChildren} from './dialog-list.js';
 import {installRoundList} from './round-list.js';
 const backIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m14 5-7 7 7 7"/></svg>';
+const closeIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="m6 6 12 12M6 18 18 6"/></svg>';
 const bubbleIcon='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3c5 0 9 3.5 9 8s-4 8-9 8c-1.3 0-2.6-.2-3.7-.7L3 21l1.2-5.3A7.4 7.4 0 0 1 3 11c0-4.5 4-8 9-8Z"/></svg>';
 export function createForumTopics({host,chat,header,onSelect,onMore,onOpen=()=>{},onClose=()=>{},renderIcon=()=>{},releaseIcon=()=>{},getScale=()=>1,doc=document,win=window}){
  let peer=null,topics=[],selected=0,more=false,busy=false,error='',expanded=true,collapsed=false,members,online;
  const desktop=()=>win.innerWidth>900;
  const pane=doc.createElement('nav');pane.className='forum-sidebar';pane.setAttribute('aria-label','群话题');
- pane.innerHTML='<div class="forum-sidebar-heading"><button type="button" class="forum-sidebar-close" aria-label="关闭话题列表">'+backIcon+'</button><div class="forum-sidebar-title"><strong class="forum-sidebar-name"></strong><small class="forum-sidebar-meta"></small></div></div><div class="forum-sidebar-list"></div><button type="button" class="forum-more">加载更多</button><p class="forum-status" role="status"></p>';
+ pane.innerHTML='<div class="forum-sidebar-heading"><button type="button" class="forum-sidebar-close" aria-label="关闭话题列表">'+closeIcon+'</button><div class="forum-sidebar-title"><strong class="forum-sidebar-name"></strong><small class="forum-sidebar-meta"></small></div></div><div class="forum-sidebar-list"></div><button type="button" class="forum-more">加载更多</button><p class="forum-status" role="status"></p>';
  host.append(pane);
  const trigger=doc.createElement('button');trigger.type='button';trigger.className='forum-topic-trigger';trigger.setAttribute('aria-haspopup','dialog');trigger.innerHTML='<span class="topic-avatar"></span><span class="forum-current-title"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m8 10 4 4 4-4"/></svg>';header.insertBefore(trigger,header.querySelector('#details'));
  const picker=doc.createElement('dialog');picker.id='forumTopics';picker.className='forum-picker';picker.setAttribute('aria-label','群话题');picker.innerHTML='<div class="page-head"><button type="button" id="closeForumTopics" class="icon" aria-label="返回聊天">'+backIcon+'</button><h2>群话题</h2></div><label class="forum-search panel-round-item"><input type="search" placeholder="搜索已加载话题" aria-label="搜索群话题"></label><div class="forum-picker-list"></div><button type="button" class="forum-more panel-round-item">加载更多</button><p class="forum-status panel-round-item" role="status"></p>';
