@@ -44,7 +44,7 @@ export function createDialogList(root,{select,contextMenu,avatar,observeAvatar=(
   const nodes=[];
   for(const d of ordered){
    let r=records.get(d.id);if(!r){
-    const row=document.createElement('button');row.className='dialog-row';row.dataset.chatId=d.id;row.onclick=()=>select(d.id);
+    const row=document.createElement('button');row.className='dialog-row';row.dataset.chatId=d.id;row.onclick=()=>select(d.id,d.topicId||0);
     if(contextMenu){row.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();return contextMenu(d.id,e,row)};row.onkeydown=e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();return contextMenu(d.id,null,row)}}}
     const av=document.createElement('div');av.className='avatar';const copy=document.createElement('div');copy.className='dialog-copy';
     const top=document.createElement('div');top.className='row-top';const title=document.createElement('strong'),time=document.createElement('time');const pin=document.createElement('span');pin.className='pin-indicator';pin.hidden=true;pin.setAttribute('role','img');pin.setAttribute('aria-label','已置顶');pin.innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 2 7 7-2 1-3-2-2 2-1-1 2-2-2-3Z M6 10l-3 3"/></svg>';top.append(title,pin,time);

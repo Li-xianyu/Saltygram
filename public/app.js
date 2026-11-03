@@ -247,7 +247,7 @@ async function select(id,topic=0,{record=true,nested=false,cachedOnly=false}={})
  if(!cachedOnly&&d.unreadMark)telegram.markConversationUnread(id,false).then(()=>{d.unreadMark=false;snapshotPut('dialogs',dialogs);renderDialogs()}).catch(()=>{});
  if(!readStates.has(key)&&!topic&&d.readState)readStates.set(key,d.readState);if(currentRead(key).unread)initialUnread.set(key,currentRead(key).inbox||0);
  const cached=history[key]||await snapshotGet('messages:'+key);if(version!==generation)return;
- if(cached){history[key]=cached.filter(m=>m.id>(clearedConversations.get(id)??-1));const resume=chatScrolls.has(chatScrollKey());renderMessages(resume?'preserve':'bottom');if(resume)restoreChatScroll()}else{$('#messages').innerHTML='<div class="empty">加载中</div>';updateHistoryControl()}
+ if(cached){history[key]=cached.filter(m=>m.id>(clearedConversations.get(id)??-1));if(topic>0&&!nested)chatScrolls.delete(chatScrollKey());const resume=chatScrolls.has(chatScrollKey());renderMessages(resume?'preserve':'bottom');if(resume)restoreChatScroll()}else{$('#messages').innerHTML='<div class="empty">加载中</div>';updateHistoryControl()}
  if(cachedOnly)return;
  try{await refreshThread(id,topic,version)}catch(e){if(version===generation){if(!history[key])$('#messages').innerHTML='<div class="empty">加载失败，请重试</div>';toast(e.errorMessage||e.message)}}
 }
