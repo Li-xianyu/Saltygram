@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
 test('chat UI renders links, buttons, automatic images and stickers and scopes topic reads',async()=>{
  const html=await readFile(new URL('../public/index.html',import.meta.url),'utf8');const {document,window}=parseHTML(html);
- window.innerWidth=1000;window.innerHeight=800;window.HTMLElement.prototype.getBoundingClientRect=()=>({right:500,bottom:100,top:50});globalThis.testObservers=[];Object.assign(globalThis,{document,window,localStorage:{getItem:()=>null,setItem(){}},matchMedia:()=>({matches:true})});
+ window.innerWidth=1000;window.innerHeight=800;window.HTMLElement.prototype.getBoundingClientRect=function(){return this.dataset.messageId==='153'?{right:500,bottom:200,top:150}:{right:500,bottom:100,top:50}};globalThis.testObservers=[];Object.assign(globalThis,{document,window,localStorage:{getItem:()=>null,setItem(){}},matchMedia:()=>({matches:true})});
  globalThis.IntersectionObserver=class{constructor(fn,options){this.fn=fn;this.options=options;globalThis.testObservers.push(this)}observe(target){queueMicrotask(()=>{if(target.isConnected)this.fn([{isIntersecting:true,target}])})}unobserve(){}disconnect(){}};
  globalThis.Option=function(text,value){const o=document.createElement('option');o.textContent=text;o.value=value;return o};
  for(const select of document.querySelectorAll('select')){let value='0';Object.defineProperty(select,'value',{get:()=>value,set:v=>value=v});select.add=o=>select.append(o)}
@@ -50,7 +50,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
  `;
  let app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
  app=app.replace("'./telegram.js'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(adapter).toString('base64')));
- for(const file of ['project-entry.js','ai-manager.js','connection-latency.js','context-menu.js','composer-layout.js','round-scrollbar.js','folder-pages.js','filter-cycle.js','folder-ui.js','poll.js','message-albums.js','video-avatar.js','chat-membership.js','profile-stories.js','button-label.js','telegram-links.js','service-message.js','audio-player.js','video-policy.js','media-viewer.js','page-gestures.js','swipe-close.js','cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
+ for(const file of ['forum-topics.js','page-session.js','sticker-cache.js','pinned-messages.js','read-state.js','project-entry.js','ai-manager.js','connection-latency.js','context-menu.js','composer-layout.js','round-scrollbar.js','folder-pages.js','filter-cycle.js','folder-ui.js','poll.js','message-albums.js','video-avatar.js','chat-membership.js','profile-stories.js','button-label.js','telegram-links.js','service-message.js','audio-player.js','video-policy.js','media-viewer.js','page-gestures.js','swipe-close.js','cache.js','resources.js','richtext.js','chat-state.js','dialog-list.js','watch-haptics.js','round-list.js','navigation.js','cached-resource.js','media-download.js','media-stream.js','conversation-info.js','round-preview.js','gallery-tile.js'])app=app.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
  app=app.replace("'pako'",JSON.stringify(import.meta.resolve('pako')));
  app=app.replace("'qrcode'",JSON.stringify(import.meta.resolve('qrcode')));
  try{
@@ -155,6 +155,7 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   globalThis.receiveLive({kind:'message',chat:'-1001',topic:42,message:live});await new Promise(r=>setImmediate(r));
   assert.ok(document.querySelector('[data-message-id="153"]').textContent.includes('即时收到'));assert.equal(globalThis.uiCalls.length,before);assert.equal(document.querySelector('[data-message-id="101"]'),unchangedRow);assert.equal(document.querySelector('[data-chat-id="-2000"]'),unchangedDialog);assert.equal(unchangedDialog.querySelector('.avatar'),unchangedAvatar);
   assert.equal(chatPane.scrollTop,800);assert.equal(document.querySelector('.jump-unread').textContent,'1');assert.equal(document.querySelector('#jumpToBottom').hidden,false);
+  chatPane.scrollTop=900;chatPane.dispatchEvent(new window.Event('scroll'));assert.equal(document.querySelector('#jumpToBottom').hidden,true,'being at the bottom must not reuse server unread count');chatPane.scrollTop=800;
   globalThis.receiveLive({kind:'message',chat:'-1001',topic:42,message:live});await new Promise(r=>setImmediate(r));assert.equal(document.querySelectorAll('[data-message-id="153"]').length,1);
   globalThis.receiveLive({kind:'edit',chat:'-1001',topic:42,message:{...live,text:'实时编辑'}});await new Promise(r=>setImmediate(r));assert.ok(document.querySelector('[data-message-id="153"]').textContent.includes('实时编辑'));
   globalThis.receiveLive({kind:'message',chat:'-2000',topic:0,message:{id:200,text:'后台会话',date:2,out:false}});await new Promise(r=>setImmediate(r));
@@ -241,7 +242,8 @@ test('chat UI renders links, buttons, automatic images and stickers and scopes t
   document.querySelector('#chatIdentity').onclick();for(let i=0;i<10;i++)await new Promise(r=>setImmediate(r));
   assert.ok(document.body.classList.contains('info-open'));
   swipeBack('#conversationInfo');assert.equal(document.body.classList.contains('info-open'),false);assert.ok(document.body.classList.contains('chat-open'));
-  await document.querySelector('#dialogs [data-chat-id="-2000"]').onclick();
+  // This server dialog was deleted earlier; reopen through the remaining contact.
+  await document.querySelector('#contactsView [data-chat-id="-2000"]').onclick();
   const composer=document.querySelector('#composer'),message=document.querySelector('#message');message.value='/';await composer.onsubmit({preventDefault(){}});assert.equal(message.value,'');assert.equal(document.querySelectorAll('.bot-command-list button').length,2);assert.equal(document.querySelector('.bot-command-list strong').textContent,'/help');
   swipeBack('main');assert.equal(document.body.classList.contains('chat-open'),false);
   assert.equal(document.body.classList.contains('swipe-route-chat'),false);assert.equal(document.body.classList.contains('swipe-route-info'),false);

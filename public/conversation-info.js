@@ -18,6 +18,7 @@ export function attachmentLabel(item){
 }
 
 export function conversationStatus(profile){
+ if(profile.deleted)return '账号已注销';if(profile.deactivated)return '群组已停用';if(profile.forbidden)return '当前账号无法访问';if(profile.kicked)return '已被移出或封禁';if(profile.restricted)return profile.restrictionReason||'访问受限';
  if(profile.group||profile.channel){
   const count=profile.members===undefined?'':profile.members+' 位'+(profile.broadcast?'订阅者':'成员');
   return [count,profile.online===undefined?'':profile.online+' 人在线'].filter(Boolean).join(' · ')||'成员信息暂不可用';
@@ -30,6 +31,7 @@ export function conversationStatus(profile){
 }
 
 export function createConversationInfo({root,telegram,avatar,galleryTile,storyTile=galleryTile,audioPlayer,onOpenItem=()=>{},onLocate=()=>{},onLocateError=()=>{},onPlayAudio=()=>null,coverLoader=()=>null,readCache,writeCache,watch,onBack,onMember,release=()=>{},scope=()=>null,cacheVersion=()=>0,roundList=installRoundList}){
+ let networkEnabled=true;
  let generation=0,current,tab='members',filter='visual',pages=new Map(),photoURL,owner,cacheEpoch,renderedKey='',records=new Map(),round,columns=3,videoAvatar,availability=new Map();
  const player=audioPlayer||createAudioPlayer({doc:root.ownerDocument,load:onPlayAudio,coverLoader});
  const $=selector=>root.querySelector(selector);
@@ -149,6 +151,7 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,storyTi
   if(!state||refresh)state={items:[],next:0,more:true};state.busy=true;state.error='';pages.set(key,state);if(pageKey()===key)paintPage();
   try{
    if(!probe&&!state.items.length){const cached=await readCache('info-list:'+id+':'+key);if(!valid(version,id))return;if(cached?.items){Object.assign(state,cached,{busy:true});if(pageKey()===key)paintPage()}}
+   if(!networkEnabled)return;
    const offset=refresh||first?0:state.next;
    const result=selectedTab==='stories'?await telegram.getProfileStories(id,{offsetId:offset,limit:probe?1:24}):selectedTab==='members'?await telegram.getConversationMembers(id,offset,probe?1:40):await telegram.getConversationItems(id,{limit:probe?1:30,saved:selectedTab==='saved',filter:selectedTab==='media'?selectedFilter:ITEM_FILTERS[selectedTab]||'visual',offsetId:offset});
    if(!valid(version,id))return;
@@ -158,9 +161,11 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,storyTi
   }catch(error){if(valid(version,id))state.error=/CHAT_ADMIN_REQUIRED|CHANNEL_PRIVATE|PARTICIPANTS/.test(error.errorMessage||error.message)?selectedTab==='members'?'当前账号无权查看成员':'当前账号无权查看此内容':error.errorMessage||error.message}
   finally{state.busy=false;if(valid(version,id)&&pageKey()===key)paintPage()}
  }
- async function open(dialog,initialTab){
-  itemMenu.reset();pageObserver?.disconnect();round?.destroy();round=null;stop();records=new Map();renderedKey='';owner=scope();cacheEpoch=cacheVersion();const version=++generation,id=dialog.id;current=dialog;pages=new Map();availability=new Map();tab=initialTab||(dialog.group||dialog.channel?'members':'media');filter='visual';root.hidden=false;document.body.classList.add('info-open');
+ async function open(dialog,initialTab,{network=true,mediaFilter='visual'}={}){
+  networkEnabled=network;
+  itemMenu.reset();pageObserver?.disconnect();round?.destroy();round=null;stop();records=new Map();renderedKey='';owner=scope();cacheEpoch=cacheVersion();const version=++generation,id=dialog.id;current=dialog;pages=new Map();availability=new Map();tab=initialTab||(dialog.group||dialog.channel?'members':'media');filter=['visual','photo','video'].includes(mediaFilter)?mediaFilter:'visual';root.hidden=false;document.body.classList.add('info-open');
   root.innerHTML='<div class="info-toolbar"><button class="icon info-back" aria-label="返回聊天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button><span>会话信息</span></div><div class="info-hero"><div class="info-backdrop" aria-hidden="true"></div><div class="info-avatar avatar"></div></div><h2 class="info-name"></h2><p class="info-status"></p><div class="info-link" hidden></div><div class="info-tabs" role="tablist" aria-label="会话内容">'+INFO_TABS.map(([key,label])=>'<button role="tab" data-info-tab="'+key+'">'+label+'</button>').join('')+'</div><div class="info-filter" hidden><span>类型</span><button type="button" class="info-filter-trigger" aria-haspopup="listbox" aria-expanded="false"><span class="info-filter-value">全部</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="info-filter-menu" role="listbox" hidden><button type="button" role="option" data-filter="visual" class="selected">全部</button><button type="button" role="option" data-filter="photo">图片</button><button type="button" role="option" data-filter="video">视频</button></div></div><div class="info-list"></div><p class="info-load-status" role="status"></p><div class="info-page-sentinel" aria-hidden="true"></div><button class="info-more" hidden>重试加载</button>';
+  $('.info-filter-value').textContent=({visual:'全部',photo:'图片',video:'视频'})[filter];for(const option of root.querySelectorAll('[data-filter]'))option.classList.toggle('selected',option.dataset.filter===filter);
   if(win.IntersectionObserver){pageObserver=new win.IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))autoLoad()},{root:watch()?null:root,rootMargin:'180px'});pageObserver.observe($('.info-page-sentinel'))}
   $('.info-back').onclick=onBack;$('.info-more').onclick=()=>loadPage();const filterTrigger=$('.info-filter-trigger'),filterMenu=$('.info-filter-menu');filterTrigger.onclick=()=>{const show=filterMenu.hidden;filterMenu.hidden=!show;filterTrigger.setAttribute('aria-expanded',String(!show))};for(const option of filterMenu.querySelectorAll('button'))option.onclick=()=>{filter=option.dataset.filter;$('.info-filter-value').textContent=option.textContent;for(const b of filterMenu.querySelectorAll('button')){const s=b.dataset.filter===filter;b.classList.toggle('selected',s);b.setAttribute('aria-selected',String(s))}filterMenu.hidden=true;filterTrigger.setAttribute('aria-expanded','false');loadPage()};root.addEventListener('scroll',onScroll,{passive:true});if(typeof window!=='undefined')window.addEventListener('scroll',onScroll,{passive:true});lastScrollY=scrollTop();edgeTouch=false;document.addEventListener('pointerdown',onDocPointer);document.addEventListener('touchstart',onTouchStart,{passive:true});document.addEventListener('touchmove',onTouchMove,{passive:true});document.addEventListener('touchend',onTouchEnd,{passive:true});
   for(const button of root.querySelectorAll('[data-info-tab]'))button.onclick=()=>{tab=button.dataset.infoTab;const state=pages.get(pageKey());if(state?.items.length&&!state.error)paintPage();else void loadPage()};
@@ -169,7 +174,11 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,storyTi
   videoAvatar=createVideoAvatar({root:$('.info-avatar'),load:p=>telegram.downloadAvatarVideo(p.id,watch()),alive:()=>valid(version,id)});
   paintProfile(dialog);paintPage();
   try{const cached=await readCache('info-profile:'+id+':profile');if(!valid(version,id))return;if(cached)paintProfile(cached)}catch{}
-  void loadPage({refresh:true});
+  if(!networkEnabled){await loadPage({refresh:true});return}
+  await revalidate();
+ }
+ async function revalidate(){
+  if(!current||root.hidden)return;networkEnabled=true;const version=generation,id=current.id;void loadPage({refresh:true});
   try{const profile=await telegram.getConversationProfile(id);if(!valid(version,id))return;paintProfile(profile);if(canCache(version,id))void writeCache('info-profile:'+id+':profile',profile);if(profile.hasVideoAvatar)void videoAvatar.update(profile);else void fullPhoto(version,id)}catch{if(valid(version,id))text('.info-status','信息同步失败，可返回后重试')}
   if(valid(version,id)){
    const pending=INFO_TABS.map(([key])=>key).filter(eligible);
@@ -177,5 +186,5 @@ export function createConversationInfo({root,telegram,avatar,galleryTile,storyTi
    void Promise.all([probe(),probe()]);
   }
  }
- return {open,hide,closeAudioPlayer:()=>player.close()};
+ return {open,hide,revalidate,snapshot:()=>current?{id:current.id,tab,filter}:null,closeAudioPlayer:()=>player.close()};
 }

@@ -78,3 +78,23 @@ test('reload normalizes retained chat state and parent pop does not render twice
  assert.equal(history.state,null);assert.equal(history.scrollRestoration,'manual');
  nav.push();nav.goBack();assert.equal(index,0);assert.equal(listCalls,1);assert.equal(reopens,0);
 });
+
+test('linked chats preserve each individual conversation and topic on back',()=>{
+ const {win}=fixture();const seen=[];const nav=installNavigation({win,onReopen:s=>seen.push(s),onBackToList:()=>seen.push({list:true})});
+ nav.push('chat',{id:'bot',topic:0});nav.push('chat',{id:'group-a',topic:2});nav.push('chat',{id:'group-b',topic:7});
+ nav.goBack();assert.equal(seen.at(-1).id,'group-a');assert.equal(seen.at(-1).topic,2);nav.goBack();assert.equal(seen.at(-1).id,'bot');nav.goBack();assert.equal(seen.at(-1).list,true);
+});
+
+test('saved linked-chat and info layers restore in order and back returns to each parent',()=>{
+ const original=fixture(),nav=installNavigation({win:original.win});nav.push('chat',{id:'bot',topic:0});nav.push('chat',{id:'group',topic:7});nav.push('info');const saved=nav.snapshot();
+ const restored=fixture();let destination;const next=installNavigation({win:restored.win,onReopen:r=>destination=r,onBackToList:()=>destination='list'});assert.equal(next.restore(saved),true);next.goBack();assert.equal(destination.id,'group');next.goBack();assert.equal(destination.id,'bot');next.goBack();assert.equal(destination,'list');assert.equal(next.restore({trail:[{view:'unknown'}]}),false);
+});
+
+test('forum picker is a separate layer and returns to the same chat and topic',()=>{
+ const f=fixture();let reopened,closed=0;const nav=installNavigation({win:f.win,onReopen:r=>reopened=r,onCloseTopics:()=>closed++});nav.push('chat',{id:'group',topic:42});nav.push('topics');assert.equal(nav.isCurrent('topics'),true);const saved=nav.snapshot();assert.equal(saved.trail.at(-1).view,'topics');nav.goBack();assert.equal(closed,1);assert.equal(reopened.id,'group');assert.equal(reopened.topic,42);assert.equal(nav.isCurrent('chat'),true);
+});
+
+test('choosing a topic after an awaited modal back keeps browser and in-app history aligned',async()=>{
+ const events=new EventTarget(),stack=[null];let index=0,lists=0;const win={setTimeout,clearTimeout,addEventListener:events.addEventListener.bind(events),removeEventListener:events.removeEventListener.bind(events),history:{state:null,replaceState:s=>{stack[index]=s},pushState:s=>{stack.splice(++index);stack[index]=s},back:()=>{const state=stack[--index];queueMicrotask(()=>{const event=new Event('popstate');event.state=state;events.dispatchEvent(event)})}}};
+ const nav=installNavigation({win,onBackToList:()=>lists++});nav.push('chat',{id:'group',topic:0});nav.push('topics');await nav.goBack({wait:true});nav.replaceChat({id:'group',topic:42});assert.equal(stack[index].topic,42);nav.goBack();await new Promise(r=>setImmediate(r));assert.equal(index,0);assert.equal(lists,1);assert.equal(nav.isCurrent('list'),true);
+});

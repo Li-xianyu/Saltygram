@@ -8,7 +8,7 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  export class TelegramClient{
  constructor(session,id,hash,options){globalThis.adapterOptions=options}
  async getMe(){return {id:1,firstName:'Owner',username:'owner',phone:'123',photo:{photoId:8},apiHash:'must-not-leak'}}
- connected=true;addEventHandler(handler,builder){globalThis.adapterEvents.push({handler,builder})}async getDialogs(){return [{id:2,inputEntity:new Api.InputPeerUser({userId:2,accessHash:3}),isUser:true,entity:{className:'User',id:2,firstName:'Peer'},title:'Peer',unreadCount:2,dialog:{pinned:true,readInboxMaxId:30,readOutboxMaxId:40}},{id:'-1008',inputEntity:new Api.InputPeerChannel({channelId:8,accessHash:9}),entity:{className:'Channel',id:8,title:'Group',megagroup:true,left:true,joinRequest:true},title:'Group',dialog:{}},{id:'-7',inputEntity:new Api.InputPeerChat({chatId:7}),entity:{className:'Chat',id:7,title:'Basic'},title:'Basic',dialog:{}}]}
+ connected=true;addEventHandler(handler,builder){globalThis.adapterEvents.push({handler,builder})}async getDialogs(options){globalThis.adapterCalls.push({method:'dialogs',options});if(options.folder===1)return [{id:'-1009',inputEntity:new Api.InputPeerChannel({channelId:9,accessHash:9}),entity:{className:'Channel',id:9,title:'Archived only',broadcast:true},title:'Archived only',dialog:{folderId:1}}];return [{id:2,inputEntity:new Api.InputPeerUser({userId:2,accessHash:3}),isUser:true,entity:{className:'User',id:2,firstName:'Peer'},title:'Peer',unreadCount:2,dialog:{pinned:true,readInboxMaxId:30,readOutboxMaxId:40}},{id:'-1008',inputEntity:new Api.InputPeerChannel({channelId:8,accessHash:9}),entity:{className:'Channel',id:8,title:'Group',megagroup:true,left:true,joinRequest:true},title:'Group',dialog:{}},{id:'-7',inputEntity:new Api.InputPeerChat({chatId:7}),entity:{className:'Chat',id:7,title:'Basic'},title:'Basic',dialog:{}}]}
  async getEntity(reference){return new Api.User({id:42,accessHash:3,firstName:'Actor',username:'actor'})}
  async getMessages(peer,options){if(options.ids?.[0]===702)return [{className:'Message',id:702,date:1,message:'',media:{className:'MessageMediaPoll',poll:{id:123,question:{text:'Question'},answers:[{text:{text:'A'},option:new Uint8Array([0,255])},{text:{text:'B'},option:new Uint8Array([1,128])}]},results:{totalVoters:0}}}];if(options.ids?.[0]===700)return [{className:'MessageService',id:700,date:1,fromId:new Api.PeerUser({userId:2}),action:{className:'MessageActionChatJoinedByLink'}}];globalThis.adapterCalls.push({method:'history',options});if(options.ids?.[0]>=900)return [{className:'Message',id:options.ids[0],document:{id:99,accessHash:3,fileReference:new Uint8Array([1]),dcId:2,size:options.ids[0]===900?100:1048583,mimeType:'video/mp4',attributes:[],thumbs:[{w:80,h:80,type:'s'},{w:320,h:320,type:'m'},{w:1280,h:1280,type:'x'}]}}];return [{className:'Message',id:options.ids?.[0]||50,groupedId:options.ids?.[0]===701?BigInt('9223372036854775801'):undefined,message:'original',out:false,date:1}]}
  async downloadMedia(m,options){globalThis.adapterCalls.push({method:'mediaDownload',options});options.progressCallback?.(50,100);options.progressCallback?.(100,100);return new Uint8Array(100)}
@@ -18,6 +18,9 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  async deleteMessages(peer,ids,options){globalThis.adapterCalls.push({method:'delete',ids,options})}
  async markAsRead(peer,message,options){globalThis.adapterCalls.push({method:'read',options})}
  async invoke(req){globalThis.adapterCalls.push({method:req.className,req});
+ if(req.className==='channels.GetForumTopics')return {count:2,topics:[{className:'ForumTopic',id:1,title:'General',iconColor:0x8eee98,unreadCount:2},{className:'ForumTopic',id:42,title:'Tech',iconColor:0xcb86db,iconEmojiId:'9223372036854775001',closed:true,pinned:true,unreadCount:4,date:1,topMessage:50}]};
+ if(req.className==='messages.GetCustomEmojiDocuments')return req.documentId.map(id=>({id,mimeType:'image/webp',thumbs:[{w:64,h:64,type:'s'}]}));
+
  if(req.className==='messages.GetDialogFilters')return {filters:[new Api.DialogFilterDefault(),new Api.DialogFilter({id:2,title:new Api.TextWithEntities({text:'Friends',entities:[]}),contacts:true,pinnedPeers:[],includePeers:[],excludePeers:[]})]};
  if(['messages.UpdateDialogFilter','messages.UpdateDialogFiltersOrder'].includes(req.className))return true;
  if(req.className==='Ping')return new Api.Pong({msgId:req.pingId,pingId:req.pingId});
@@ -40,6 +43,7 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  `;
  let source=await readFile(new URL('../public/telegram.js',import.meta.url),'utf8');source=source.replace("'telegram'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(mock).toString('base64')));
  for(const name of ['telegram/sessions/index.js','telegram/Password.js','big-integer','telegram/events/NewMessage.js','telegram/events/EditedMessage.js','telegram/events/Raw.js','telegram/network/index.js','telegram/network/MTProtoSender.js'])source=source.replace(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replace("'"+name+"'",JSON.stringify(import.meta.resolve(name)));
+ for(const file of ['entity-state.js','web-preview.js'])source=source.replace(`'./${file}'`,JSON.stringify(new URL('../public/'+file,import.meta.url).href));
  source=source.replace("'./poll.js'",JSON.stringify(new URL('../public/poll.js',import.meta.url).href));
  source=source.replace("'./service-message.js'",JSON.stringify(new URL('../public/service-message.js',import.meta.url).href));
  source=source.replace("'./cache.js'",JSON.stringify(new URL('../public/cache.js',import.meta.url).href));
@@ -53,7 +57,7 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  const {extensions}=await import('telegram');const {ConnectionTCPObfuscated}=await import('telegram/network/index.js');
  assert.equal(globalThis.adapterOptions.networkSocket,extensions.PromisedWebSockets);
  assert.equal(globalThis.adapterOptions.connection,ConnectionTCPObfuscated);assert.equal(globalThis.adapterOptions.useWSS,true);
- const dialogs=await api.getDialogs();assert.equal(dialogs[0].personal,true);assert.equal(dialogs[0].pinned,true);assert.equal(dialogs[0].pinOrder,0);assert.equal(dialogs[1].pinned,false);await api.getMessages('2',10,{offsetId:300,limit:50});const page=globalThis.adapterCalls.find(c=>c.method==='history');assert.equal(page.options.offsetId,300);assert.equal(page.options.replyTo,10);
+ const dialogs=await api.getDialogs();assert.ok(dialogs.some(d=>d.id==='-1009'));assert.deepEqual(globalThis.adapterCalls.filter(c=>c.method==='dialogs').map(c=>c.options.folder),[0,1]);assert.equal(dialogs[0].personal,true);assert.equal(dialogs[0].pinned,true);assert.equal(dialogs[0].pinOrder,0);assert.equal(dialogs[1].pinned,false);await api.getMessages('2',10,{offsetId:300,limit:50});const page=globalThis.adapterCalls.find(c=>c.method==='history');assert.equal(page.options.offsetId,300);assert.equal(page.options.replyTo,10);
  await api.setConversationPinned('2',true);const pin=globalThis.adapterCalls.find(c=>c.method==='messages.ToggleDialogPin').req;assert.equal(pin.pinned,true);assert.equal(pin.peer.peer.userId.toString(),'2');
  await api.setConversationPinned('2',false,{filterId:2});const unpin=globalThis.adapterCalls.filter(c=>c.method==='messages.UpdateDialogFilter').at(-1).req;assert.equal(unpin.filter.pinnedPeers.length,0);assert.equal(unpin.filter.includePeers[0].userId.toString(),'2');assert.equal(unpin.filter.contacts,true);
  await api.setConversationPinned('2',true,{filterId:2});const folderPin=globalThis.adapterCalls.filter(c=>c.method==='messages.UpdateDialogFilter').at(-1).req;assert.equal(folderPin.filter.pinnedPeers[0].userId.toString(),'2');
@@ -63,8 +67,13 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  const reply=await api.sendMessage('2','reply',10,45);const send=globalThis.adapterCalls.find(c=>c.method==='send');assert.equal(send.options.replyTo,45);assert.equal(send.options.topMsgId,10);assert.equal(reply.reply.text,'original');
  await api.editMessage('2',51,'changed');assert.equal(globalThis.adapterCalls.find(c=>c.method==='edit').options.message,51);
  await api.deleteMessage('2',51,false);assert.equal(globalThis.adapterCalls.find(c=>c.method==='delete').options.revoke,false);
- const read=await api.markRead('2',50);assert.equal(read.outbox,49);assert.equal(globalThis.adapterCalls.find(c=>c.method==='read').options.maxId,50);
+ const read=await api.markRead('2',50);assert.equal(read.outbox,49);assert.equal(globalThis.adapterCalls.find(c=>c.method==='messages.ReadHistory').req.maxId,50);
+ await api.markRead('-1008',55);assert.equal(globalThis.adapterCalls.find(c=>c.method==='channels.ReadHistory').req.maxId,55);await api.markRead('-7',56);assert.ok(globalThis.adapterCalls.some(c=>c.method==='messages.ReadHistory'&&c.req.maxId===56));
  await api.markRead('2',50,10);const topicRead=globalThis.adapterCalls.find(c=>c.method==='messages.ReadDiscussion');assert.equal(topicRead.req.msgId,10);assert.equal(topicRead.req.readMaxId,50);
+ await api.performAIAction('manage_chat',{chatId:'2',action:'archive'});assert.equal(globalThis.adapterCalls.find(c=>c.method==='folders.EditPeerFolders').req.folderPeers[0].folderId,1);
+ await api.performAIAction('manage_chat',{chatId:'2',action:'mute'});assert.equal(globalThis.adapterCalls.find(c=>c.method==='account.UpdateNotifySettings').req.settings.muteUntil,2147483647);
+ await api.performAIAction('pin_message',{chatId:'2',messageId:50,pinned:true});assert.equal(globalThis.adapterCalls.find(c=>c.method==='messages.UpdatePinnedMessage').req.id,50);
+ await assert.rejects(api.performAIAction('set_admin',{chatId:'2',userId:'42',rights:{}}),/超级群/);
  const updates=[];const unsubscribe=api.subscribeUpdates(e=>updates.push(e));
  const newEvent=globalThis.adapterEvents.find(e=>e.builder.constructor.name==='NewMessage');
  newEvent.handler({chatId:'2',message:{className:'Message',id:60,message:'实时消息',out:false,date:1},_entities:new Map()});
@@ -100,4 +109,7 @@ test('Telegram adapter uses history cursors, explicit replies, edits, deletion s
  const videoPage=await api.getConversationItems('2',{filter:'video'});assert.equal(globalThis.adapterCalls.filter(c=>c.method==='messages.Search').at(-1).req.filter.className,'InputMessagesFilterVideo');
  assert.equal(videoPage.more,true,'partial search pages must not end pagination');
  assert.equal((await api.getConversationItems('2',{filter:'video',offsetId:800})).more,false,'repeated cursors terminate pagination');
+ const topics=await api.getTopics('-1008');assert.equal(topics.topics[1].iconEmojiId,'9223372036854775001');assert.equal(topics.topics[1].iconColor,0xcb86db);assert.equal(topics.topics[1].pinned,true);assert.equal(topics.topics[1].closed,true);
+ const topicIcon=await api.downloadTopicIcon(topics.topics[1].iconEmojiId);assert.equal(topicIcon.type,'image/webp');assert.equal(topicIcon.size,100);assert.equal(globalThis.adapterCalls.filter(c=>c.method==='messages.GetCustomEmojiDocuments').length,1,'the icon loader reuses the batch prepared with the topic list');
+
 });

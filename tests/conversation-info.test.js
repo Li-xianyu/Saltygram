@@ -94,3 +94,9 @@ test('tabs hide only after confirmed empty results, stories come first and failu
  assert.equal(root.querySelector('[data-info-tab="music"]').hidden,false,'network errors are not proof of empty content');
  page.hide();emptyStories=true;await page.open({id:'friend',title:'Friend'});await ticks();assert.equal(root.querySelector('[data-info-tab="stories"]').hidden,true);page.hide();
 });
+
+test('restoring info tab and media filter paints disk data before any network call',async()=>{
+ const {document}=parseHTML('<body><section id="info" hidden></section></body>');globalThis.document=document;let network=0;
+ const page=createConversationInfo({root:document.querySelector('#info'),watch:()=>true,avatar(){},roundList:()=>({refresh(){},destroy(){}}),galleryTile:()=>document.createElement('button'),readCache:async key=>key.includes('info-profile')?{id:'peer',title:'缓存会话'}:key.includes('media:video')?{items:[{id:1,media:{kind:'video'}}],more:false}:null,writeCache:async()=>{},telegram:{getConversationProfile:async()=>{network++;return {id:'peer',title:'同步会话'}},getConversationItems:async()=>{network++;return {items:[],more:false}}}});
+ await page.open({id:'peer',title:'会话'},'media',{network:false,mediaFilter:'video'});assert.equal(network,0);assert.deepEqual(page.snapshot(),{id:'peer',tab:'media',filter:'video'});assert.equal(document.querySelector('.info-filter-value').textContent,'视频');assert.equal(document.querySelector('.info-name').textContent,'缓存会话');assert.equal(document.querySelectorAll('.info-grid-row').length,1);await page.revalidate();await ticks();assert.ok(network>0);page.hide();
+});

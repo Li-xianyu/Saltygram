@@ -1,8 +1,8 @@
 export function createChatMembership({composer,context,onJoin,onChange=()=>{},onError=()=>{},alive=()=>true}){
  const button=composer.ownerDocument.createElement('button');button.type='button';button.className='join-chat-button';button.hidden=true;composer.after(button);
  let peer,busy=false,version=0;
- function paint(){const blocked=!!(peer?.left||peer?.canJoin);composer.hidden=blocked;if(blocked)context.hidden=true;button.hidden=!blocked;button.disabled=busy||!!peer?.joinPending||!peer?.canJoin;
-  button.textContent=busy?'正在加入…':peer?.joinPending?'申请已发送，等待审核':!peer?.canJoin?'暂时无法加入此群聊':peer?.requestNeeded?'申请加入':peer?.broadcast?'加入频道':'加入群聊';
+ function paint(){const blocked=!!(peer?.left||peer?.canJoin||peer?.accessible===false||peer?.canSend===false);composer.hidden=blocked;if(blocked)context.hidden=true;button.hidden=!blocked;button.disabled=busy||!!peer?.joinPending||!peer?.canJoin;
+  button.textContent=peer?.accessible===false?'此会话不可访问':peer?.canSend===false&&!peer?.left?'当前没有发送权限':busy?'正在加入…':peer?.joinPending?'申请已发送，等待审核':!peer?.canJoin?'暂时无法加入此群聊':peer?.requestNeeded?'申请加入':peer?.broadcast?'加入频道':'加入群聊';
  }
  function update(value){if(busy&&peer?.id===value?.id)return;version++;peer=value;busy=false;paint()}
  button.onclick=async()=>{

@@ -30,3 +30,10 @@ test('LAN HTTP without crypto.subtle can read and create folders using the same 
   const result=await tools.execute('create_folder',{title:'私聊',includePeers:['10']},'123');assert.equal(result.ok,true);assert.equal(writes,1);assert.equal(result.folders.length,2);
  }finally{Object.defineProperty(globalThis,'crypto',original)}
 });
+
+test('folder rollback accepts only server snapshots with a current revision and preserves stale folders',async()=>{
+ let folders=[structuredClone(folder)],writes=0;const tools=createAITelegramTools({telegram:{settings:()=>({owner:'123'}),getDialogFolders:async()=>structuredClone(folders),saveDialogFolder:async value=>{writes++;folders=[value];return folders},deleteDialogFolder:async()=>{writes++;return []},reorderDialogFolders:async()=>folders}});
+ await assert.rejects(tools.execute('rollback_folder_change',{eventId:1},'123'),/后端验证/);
+ await assert.rejects(tools.execute('rollback_folder_change',{eventId:1},'123',{snapshot:[folder],afterRevision:'old'}),/其他客户端/);assert.equal(writes,0);
+ const result=await tools.execute('rollback_folder_change',{eventId:1},'123',{snapshot:[{...folder,title:'原名'}],afterRevision:await folderRevision(folders)});assert.equal(result.ok,true);assert.equal(folders[0].title,'原名');assert.equal(writes,1);
+});

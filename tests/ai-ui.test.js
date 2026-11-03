@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseHTML} from 'linkedom';
 import {createAIManager} from '../public/ai-manager.js';
-function setup(configured=true,captureTimer=false){
+function setup(configured=true,captureTimer=false,handleAPI,watch){
  const {document,window}=parseHTML('<html><body><main></main></body></html>');window.CSS={supports:()=>true};
  let data={config:{baseURL:configured?'https://example.com/v1':'',model:configured?'model':'',persona:'管家',hasApiKey:true},messages:configured?[{id:1,role:'user',content:'看看群聊',created:1},{id:2,role:'assistant',content:'我先看一下。',created:2}]:[],memories:[],events:configured?[{id:1,created:3,task_id:'task-1',kind:'tool',data:{name:'list_chats',status:'completed',args:{limit:5},result:{chats:{total:2,preview:[{id:'1',title:'音乐'}]}}}}]:[],task:null};
- const apiCalls=[];const client={connection:()=>({url:'https://backend.example',token:configured?'key':''}),api:async(owner,path,options)=>{apiCalls.push({path,options});assert.equal(owner,'123');if(path==='/history'){assert.equal(options.method,'DELETE');data={...data,messages:[],events:[],task:null}}else assert.equal(path,'/state');return structuredClone(data)},device:'test-device-0000001'};
+ const apiCalls=[];const client={watch,connection:()=>({url:'https://backend.example',token:configured?'key':''}),api:async(owner,path,options)=>{apiCalls.push({path,options});assert.equal(owner,'123');if(handleAPI&&path!=='/state')return handleAPI(path,options);if(path==='/history'){assert.equal(options.method,'DELETE');data={...data,messages:[],events:[],task:null}}else assert.equal(path,'/state');return structuredClone(data)},device:'test-device-0000001'};
  const callbacks=[];const runtime=captureTimer?{CSS:window.CSS,setTimeout:fn=>{callbacks.push(fn);return callbacks.length},clearTimeout(){}}:window;
  const manager=createAIManager({telegram:{settings:()=>({owner:'123'})},client,doc:document,win:runtime});const root=document.querySelector('#aiManager');
  root.showModal=()=>{root.open=true;root.setAttribute('open','')};root.show=()=>{root.open=true;root.setAttribute('open','')};root.close=()=>{root.open=false;root.removeAttribute('open');root.dispatchEvent(new window.Event('close'))};
@@ -42,7 +42,7 @@ test('AI composer is visible on first entry independently of a Telegram conversa
 
 test('AI sync restores all shared settings and memory, applies remote updates, and protects unsaved edits',async()=>{
  const {manager,root,window,data,update,poll}=setup(true,true);await manager.open({settings:true});
- const get=name=>root.querySelector('.ai-config-form [name="'+name+'"]');
+ const get=name=>root.querySelector('[name="'+name+'"]');
  assert.equal(get('baseURL').value,data.config.baseURL);assert.equal(get('persona').value,'管家');assert.equal(get('model').value,'model');
  assert.ok(root.querySelector('.ai-key-state').textContent.includes('已同步'));assert.equal(root.querySelector('.ai-export'),null);
  get('persona').value='正在编辑的人设';get('persona').dispatchEvent(new window.Event('input',{bubbles:true}));
@@ -80,4 +80,48 @@ test('AI task hints appear only during work and never include round numbers',asy
  assert.equal(root.querySelector('.ai-task-status').textContent,'正在思考');assert.equal(root.querySelector('.ai-chat-status').textContent,'正在思考');assert.equal(root.querySelector('.ai-chat-status').hidden,false);
  update({...data,task:{id:'working',status:'completed',step:5,calls:[]}});await poll();
  assert.equal(root.querySelector('.ai-task-status').textContent,'');assert.equal(root.querySelector('.ai-task-row').hidden,true);assert.equal(root.querySelector('.ai-chat-status').hidden,true);root.close();
+});
+
+test('dangerous pending operations visibly request confirmation and do not execute on opening',async()=>{
+ const {manager,root,data,update}=setup(true,true);update({...data,task:{id:'approve',status:'waiting-tools',step:1,updated:4,calls:[{id:'delete',name:'delete_messages',args:{chatId:'1',messageIds:[10]},status:'pending',needsApproval:true}]}});await manager.open();
+ assert.equal(root.querySelector('.ai-task-status').textContent,'等待你确认操作');assert.equal(root.querySelector('.ai-approval').closest('details').open,true);assert.ok(root.querySelector('.ai-approval').textContent.includes('正在读取操作预览'));assert.equal(root.querySelector('.ai-approval button').disabled,true);root.close();
+});
+
+test('opening an existing AI conversation jumps to the newest message and exposes composer controls',async()=>{
+ const {manager,root}=setup();const body=root.querySelector('.ai-body');body.scrollHeight=1500;body.clientHeight=300;body.scrollTop=0;await manager.open();assert.equal(body.scrollTop,1500);const button=root.querySelector('.ai-thinking');assert.ok(button.querySelector('svg'));button.onclick();assert.equal(button.getAttribute('aria-pressed'),'true');button.onclick();assert.equal(button.getAttribute('aria-pressed'),'false');assert.ok(root.querySelector('.ai-sticker'));assert.ok(root.querySelector('.send'));
+});
+
+test('sticker-only AI messages render a bare sticker without the internal prompt',async()=>{
+ const {manager,root,data,update}=setup();update({...data,messages:[{id:1,role:'user',content:'',image:'data:image/jpeg;base64,/9j/2Q=='}],events:[]});await manager.open();const row=root.querySelector('.ai-sticker-row');assert.ok(row.querySelector('.ai-sticker-image'));assert.equal(row.querySelector('.message-text'),null);assert.equal(root.querySelector('.ai-feed').textContent,'');manager.close();
+});
+
+test('AI settings have three independent tabs and model lists support click selection and provider drafts',async()=>{
+ const providers=[{id:'a',name:'Provider A',baseURL:'https://a.example/v1',model:'a-one',hasApiKey:true,models:['a-one','a-two']}];
+ const fixture=setup(true,false,async(path)=>{assert.equal(path,'/models');return {models:['fresh-one','fresh-two']}});const {manager,root,data,update}=fixture;update({...data,config:{...data.config,providers,activeProviderId:'a'}});await manager.open({settings:true});
+ const tabs=[...root.querySelectorAll('[data-settings-tab]')];assert.equal(tabs.length,3);assert.equal(root.querySelector('[data-settings-panel="backend"]').hidden,false);assert.equal(root.querySelector('[data-settings-panel="api"]').hidden,true);
+ tabs[1].onclick();assert.equal(root.querySelector('.ai-connect').hidden,true);assert.equal(root.querySelector('.ai-config').hidden,false);assert.equal(root.querySelector('.ai-persona-form').closest('section').hidden,true);assert.equal(root.querySelectorAll('.ai-model-list [role="option"]').length,2);
+ root.querySelectorAll('.ai-model-list button')[1].onclick();assert.equal(root.querySelector('[name="model"]').value,'a-two');await root.querySelector('.ai-load-models').onclick();assert.equal(root.querySelectorAll('.ai-model-list button')[0].textContent,'fresh-one');
+ root.querySelector('.ai-add-provider').onclick();assert.equal(root.querySelector('[name="baseURL"]').value,'');assert.equal(root.querySelector('[name="apiKey"]').value,'');assert.equal(root.querySelector('.ai-delete-provider').hidden,true);
+ tabs[2].onclick();assert.equal(root.querySelector('.ai-config').hidden,true);assert.equal(root.querySelector('.ai-persona-form').closest('section').hidden,false);assert.equal(manager.location().tab,'role');manager.close();
+});
+
+test('provider add, activation and inline deletion work without mixing role settings into the API form',async()=>{
+ let cfg={baseURL:'https://a.example/v1',model:'a',persona:'角色',providers:[{id:'a',name:'A',baseURL:'https://a.example/v1',model:'a',hasApiKey:true}],activeProviderId:'a'};
+ const f=setup(true,false,async(path,options)=>{if(path==='/providers'){assert.equal(options.body.name,'New provider');assert.equal(options.body.persona,undefined);cfg={...cfg,providers:[...cfg.providers,{id:'c',name:options.body.name,baseURL:options.body.baseURL,model:options.body.model}]};return {config:cfg,providerId:'c'}}if(path==='/providers/active'){assert.equal(options.body.id,'c');cfg={...cfg,activeProviderId:'c',baseURL:'https://c.example/v1',model:'c-model'};return {config:cfg}}if(path==='/providers/c'){assert.equal(options.method,'DELETE');cfg={...cfg,providers:cfg.providers.filter(p=>p.id!=='c'),activeProviderId:'a',baseURL:'https://a.example/v1',model:'a'};return {config:cfg}}if(path==='/settings'){assert.equal(options.body.baseURL,undefined);assert.equal(options.body.persona,'新角色');cfg={...cfg,...options.body};return {config:cfg}}throw Error(path)});
+ f.update({...f.data,config:cfg});await f.manager.open({settings:true,tab:'api'});f.root.querySelector('.ai-add-provider').onclick();for(const [name,value]of [['providerName','New provider'],['baseURL','https://c.example/v1'],['model','c-model']])f.root.querySelector('[name="'+name+'"]').value=value;await f.root.querySelector('.ai-config-form').onsubmit();assert.equal(f.root.querySelectorAll('.ai-provider').length,2);assert.equal(f.manager.location().provider,'c');await f.root.querySelector('.ai-use-provider').onclick();assert.equal(f.root.querySelector('.ai-use-provider').disabled,true);
+ await f.root.querySelector('.ai-delete-provider').onclick();assert.equal(f.root.querySelector('.ai-delete-provider').textContent,'确认删除');await f.root.querySelector('.ai-delete-provider').onclick();assert.equal(f.root.querySelectorAll('.ai-provider').length,1);f.root.querySelector('[name="persona"]').value='新角色';await f.root.querySelector('.ai-persona-form').onsubmit();assert.equal(cfg.persona,'新角色');f.manager.close();
+});
+
+test('runtime errors are temporary notices and old errors never return as chat bubbles on reconnect',async()=>{
+ const f=setup(true,true);f.update({...f.data,messages:[...f.data.messages,{id:3,role:'system',content:'old error',created:3}],task:{id:'task-old',status:'interrupted',error:'old error',updated:1}});await f.manager.open();assert.equal(f.root.querySelector('.ai-feed').textContent.includes('old error'),false);assert.equal(f.root.querySelector('.ai-notice').textContent,'');
+ f.update({...f.data,events:[],task:{id:'task-new',status:'interrupted',error:'fresh error',updated:2}});await f.poll();assert.equal(f.root.querySelector('.ai-notice').textContent,'fresh error');assert.equal(f.root.querySelector('.ai-feed').textContent.includes('fresh error'),false);f.manager.close();await f.manager.open();assert.equal(f.root.querySelector('.ai-notice').textContent,'');assert.equal(f.root.querySelector('.ai-feed').textContent.includes('fresh error'),false);f.manager.close();
+});
+
+
+test('live AI chunks update one bubble in place and stop watching when the page closes',async()=>{
+ let receive,signal;const f=setup(true,false,undefined,(owner,callback,abort)=>{receive=callback;signal=abort;return new Promise(resolve=>abort.addEventListener('abort',resolve,{once:true}))});
+ f.update({...f.data,task:{id:'stream-task',turn:'turn',status:'model-running',draft:''}});await f.manager.open();
+ receive({id:'stream-task',turn:'turn',status:'model-running',draft:'你好'});const bubble=f.root.querySelector('.ai-live-draft');assert.equal(bubble.querySelector('.message-text').textContent,'你好');
+ receive({id:'stream-task',turn:'turn',status:'model-running',draft:'你好，正在查看'});assert.equal(f.root.querySelector('.ai-live-draft'),bubble);assert.equal(bubble.querySelector('.message-text').textContent,'你好，正在查看');
+ f.root.close();assert.equal(signal.aborted,true);
 });

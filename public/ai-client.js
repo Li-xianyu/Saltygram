@@ -1,3 +1,4 @@
+import {readSSE} from './ai-stream.js';
 // randomUUID is HTTPS-only; LAN HTTP still exposes getRandomValues.
 // These IDs identify requests/devices and are never authentication secrets.
 export function createRequestId(source=globalThis.crypto){
@@ -18,5 +19,10 @@ export function createAIClient({fetcher=fetch,store=localStorage}={}){
   const response=await fetcher(connection.url+'/api/ai/accounts/'+owner+path,{method,headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(70000),cache:'no-store'});
   let data;try{data=await response.json()}catch{throw Error('后端没有返回 JSON，请检查地址')};if(!response.ok)throw Error(data.error||'请求失败：'+response.status);return data;
  }
- return {api,configure,connection:()=>({...connection}),device};
+ async function watch(owner,onData,signal){
+  if(!/^\d{1,20}$/.test(String(owner))||!connection.url||!connection.token)return;
+  const response=await fetcher(connection.url+'/api/ai/accounts/'+owner+'/stream',{headers:{Authorization:'Bearer '+connection.token},signal,cache:'no-store'});
+  if(!response.ok)throw Error('实时连接不可用');await readSSE(response.body,data=>onData(JSON.parse(data)));
+ }
+ return {api,watch,configure,connection:()=>({...connection}),device};
 }

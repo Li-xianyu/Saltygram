@@ -1,27 +1,34 @@
+import {folderDialogs} from './dialog-folders.js';
 import {sha256} from 'telegram/Helpers.js';
 import {validateTool} from './ai-tool-specs.js';
 export async function folderRevision(value){const bytes=new TextEncoder().encode(JSON.stringify(value));return [...new Uint8Array(globalThis.crypto?.subtle?await globalThis.crypto.subtle.digest('SHA-256',bytes):await sha256(bytes))].map(x=>x.toString(16).padStart(2,'0')).join('')}
 const fields=(value,keys)=>Object.fromEntries(keys.filter(k=>value[k]!==undefined).map(k=>[k,value[k]]));
 const peerId=id=>{if(typeof id!=='string'||!/^(-?\d+)$/.test(id))throw Error('会话 ID 格式错误');return id};
-export function createAITelegramTools({telegram,onChanged=()=>{}}){
+export function createAITelegramTools({telegram,onChanged=()=>{},onAccountChanged=()=>{}}){
+ let chatSnapshot=null;
  const owner=()=>telegram.settings().owner||telegram.cacheScope();
- async function execute(name,args,expectedOwner){
-  validateTool(name,args);const guard=()=>{if(String(owner())!==String(expectedOwner))throw Error('Telegram 账号已切换，停止执行')};guard();
+ async function execute(name,args,expectedOwner,payload){
+  const spec=validateTool(name,args);const guard=()=>{if(String(owner())!==String(expectedOwner))throw Error('Telegram 账号已切换，停止执行')};guard();
   const limit=Math.max(1,Math.min(30,args.limit||15));let result;
+  if(name==='rollback_folder_change'){if(!payload?.snapshot||!payload.afterRevision)throw Error('缺少后端验证的快照');const before=await telegram.getDialogFolders();guard();if(await folderRevision(before)!==payload.afterRevision)throw Error('分组已在其他客户端变更，拒绝覆盖');const wanted=new Set(payload.snapshot.map(f=>f.id));for(const folder of payload.snapshot){const current=before.find(f=>f.id===folder.id);if(current&&await folderRevision(current)===await folderRevision(folder))continue;if(folder.shared)throw Error('无法恢复已变化的共享分组，需要手动核对');guard();await telegram.saveDialogFolder(folder)}for(const folder of before)if(!wanted.has(folder.id)){guard();await telegram.deleteDialogFolder(folder.id)}guard();const folders=await telegram.reorderDialogFolders(payload.snapshot.map(f=>f.id));onChanged(folders);return {ok:true,folders,snapshot:before,afterRevision:await folderRevision(folders)}}
+  if(spec.account){result=await telegram.performAIAction(name,args);guard();onAccountChanged();return result}
+  if(name==='search_global'){result=await telegram.searchGlobalMessages(args);guard();return {...result,messages:result.messages.map(m=>({...fields(m,['id','chatId','date','senderId','senderName','editDate','sourcePeer','sourceMessageId']),text:String(m.text||'').slice(0,1500),textTruncated:String(m.text||'').length>1500,media:m.media?fields(m.media,['kind','mime','name']):null}))}}
+  if(name==='get_admin_log'){result=await telegram.getAdminLog(peerId(args.chatId),args);guard();return result}
+  if(name==='preview_folder'){const folders=await telegram.getDialogFolders();const {folderId,...patch}=args,folder={...(folders.find(f=>f.id===folderId)||{pinnedPeers:[],includePeers:[],excludePeers:[]}),...patch};const dialogs=await telegram.getDialogs();guard();const matches=folderDialogs(dialogs,folder);return {count:matches.length,chats:matches.slice(0,100).map(d=>({id:d.id,title:d.title})),truncated:matches.length>100}}
   if(name==='list_chats'){
-   const all=await telegram.getDialogs();guard();const rows=all.filter(d=>!args.query||d.title.toLowerCase().includes(args.query.toLowerCase())),offset=Math.max(0,args.offset||0);
-   result={total:rows.length,hasMore:offset+limit<rows.length,nextOffset:offset+limit,chats:rows.slice(offset,offset+limit).map(d=>({...fields(d,['id','title','personal','bot','group','channel','forum','unread','pinned','folderId']),lastMessage:String(d.text||'').slice(0,180)}))};
+   const reuse=(args.offset||0)>0&&chatSnapshot?.owner===String(expectedOwner)&&Date.now()-chatSnapshot.at<60000;const all=reuse?chatSnapshot.rows:await telegram.getDialogs();guard();if(!reuse)chatSnapshot={owner:String(expectedOwner),at:Date.now(),rows:all};const rows=all.filter(d=>!args.query||d.title.toLowerCase().includes(args.query.toLowerCase())),offset=Math.max(0,args.offset||0);
+   result={snapshotAt:chatSnapshot.at,total:rows.length,hasMore:offset+limit<rows.length,nextOffset:offset+limit,chats:rows.slice(offset,offset+limit).map(d=>({...fields(d,['id','title','personal','bot','group','channel','forum','unread','pinned','folderId']),lastMessage:String(d.text||'').slice(0,180)}))};
   }else if(name==='get_chat'){
    const d=await telegram.getConversationProfile(peerId(args.chatId));guard();result=fields(d,['id','title','about','username','user','bot','group','broadcast','forum','members','online','contact']);
   }else if(name==='read_history'||name==='search_messages'){
    const id=peerId(args.chatId);if(args.ids?.length>10)throw Error('一次最多读取 10 条指定消息');
-   const rows=name==='search_messages'?await telegram.searchMessages(id,args.query,{offsetId:args.offsetId||0,limit}):await telegram.getMessages(id,Math.max(0,args.topicId||0),{offsetId:Math.max(0,args.offsetId||0),limit,...(args.ids?{ids:args.ids.map(id=>{if(!/^\d+$/.test(id))throw Error('消息 ID 格式错误');return Number(id)})}:{})});guard();
-   result={chatId:id,hasMore:!args.ids&&rows.length>=limit,nextOffsetId:rows.length?Math.min(...rows.map(m=>m.id)):0,messages:rows.map(m=>({...fields(m,['id','date','senderId','senderName','out','replyId','topicId','service','groupedId']),text:String(m.text||'').slice(0,args.ids?6000:2000),textTruncated:String(m.text||'').length>(args.ids?6000:2000),media:m.media?fields(m.media,['kind','name','mime','duration']):null}))};
+   let rows=name==='search_messages'?await telegram.searchMessages(id,args.query,{offsetId:args.offsetId||0,limit}):await telegram.getMessages(id,Math.max(0,args.topicId||0),{offsetId:Math.max(0,args.offsetId||0),limit,...(args.ids?{ids:args.ids.map(id=>{if(!/^\d+$/.test(id))throw Error('消息 ID 格式错误');return Number(id)})}:{})});guard();const raw=rows;rows=rows.filter(m=>(!args.minDate||m.date>=args.minDate)&&(!args.maxDate||m.date<=args.maxDate));
+   result={chatId:id,hasMore:!args.ids&&raw.length>=limit,nextOffsetId:raw.length?Math.min(...raw.map(m=>m.id)):0,messages:rows.map(m=>({...fields(m,['id','date','senderId','senderName','out','replyId','topicId','service','groupedId','edited','editDate','sourcePeer','sourceMessageId']),text:String(m.text||'').slice(0,args.ids?6000:2000),textTruncated:String(m.text||'').length>(args.ids?6000:2000),media:m.media?fields(m.media,['kind','name','mime','duration']):null}))};
   }else if(name==='list_topics'){result=await telegram.getTopics(peerId(args.chatId),{date:args.offsetDate||0,message:args.offsetId||0,id:args.offsetTopic||0});guard()}
   else{
    const before=await telegram.getDialogFolders();guard();
    const revisions=await Promise.all(before.map(folderRevision)),snapshotRevision=await folderRevision(before);
-   if(name==='list_folders')return {snapshotRevision,folders:before.map((f,i)=>({...f,revision:revisions[i],editable:!f.shared}))};
+   if(name==='list_folders'){const all=before.map((f,i)=>({...f,revision:revisions[i],editable:!f.shared})),offset=Math.max(0,args.offset||0),size=Math.min(5,Math.max(1,args.limit||5));return {snapshotRevision,total:all.length,hasMore:args.folderId===undefined&&offset+size<all.length,nextOffset:offset+size,folders:args.folderId===undefined?all.slice(offset,offset+size):all.filter(f=>f.id===args.folderId)}};
    let folders;
    if(name==='create_folder'){
     if(!args.title.trim()||args.title.length>12)throw Error('分组名称需要 1–12 个 UTF-16 字符');

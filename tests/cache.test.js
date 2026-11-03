@@ -19,3 +19,14 @@ test('conversation cache purge removes only matching resources and snapshots',as
  const {removeCachePrefixes}=await import('../public/cache.js');await clearCache();await cachePut('a:snapshot:messages:chat1:0',[{id:1}]);await cachePut('a:image:chat1:pic',new Blob(['pic']));await cachePut('a:snapshot:messages:chat2:0',[{id:2}]);
  await removeCachePrefixes(['a:snapshot:messages:chat1:','a:image:chat1:']);assert.equal(await cacheGet('a:image:chat1:pic'),null);assert.equal(await cacheGet('a:snapshot:messages:chat1:0'),null);assert.deepEqual(await cacheGet('a:snapshot:messages:chat2:0'),[{id:2}]);await clearCache();
 });
+
+test('adaptive cache budgets respect browser quota and protect snapshots and stickers before ordinary media',async()=>{
+ const {cacheBudget,evictionKeys,CACHE_LIMIT,cacheHas}=await import('../public/cache.js');assert.equal(CACHE_LIMIT,2*1024**3);assert.equal(cacheBudget(16*1024**3),2*1024**3);assert.equal(cacheBudget(256*1024**2),64*1024**2);assert.equal(cacheBudget(undefined),512*1024**2);
+ const meta=[{key:'a:snapshot:dialogs',size:20,used:1},{key:'a:sticker:123',size:20,used:2},{key:'a:media:video',size:80,used:9}];assert.deepEqual(evictionKeys(meta,'a:new',10,100),['a:media:video']);
+ await clearCache();assert.equal(await cacheHas('a:sticker:123'),false);await cachePut('a:sticker:123',new Blob(['data']));assert.equal(await cacheHas('a:sticker:123'),true);await clearCache();
+});
+
+test('background warming refuses eviction while foreground writes can reclaim space',async()=>{
+ const original=Object.getOwnPropertyDescriptor(globalThis,'navigator');Object.defineProperty(globalThis,'navigator',{configurable:true,value:{storage:{estimate:async()=>({quota:64})}}});
+ const tight=await import('../public/cache.js?pressure');try{await tight.clearCache();assert.equal(await tight.cachePut('old',new Blob(['12345678'])),true);assert.equal(await tight.cachePut('new',new Blob(['1234567890']),{evict:false}),false);assert.equal(await tight.cacheHas('old'),true);assert.equal(await tight.cacheHas('new'),false);assert.equal(await tight.cachePut('new',new Blob(['1234567890'])),true);assert.equal(await tight.cacheHas('old'),false)}finally{await tight.clearCache();if(original)Object.defineProperty(globalThis,'navigator',original);else delete globalThis.navigator}
+});
