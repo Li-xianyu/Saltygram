@@ -11,7 +11,7 @@ test('dialog rows and avatars survive updates and unchanged rows cause no DOM wr
  update(dialogs.map(d=>({...d})));assert.equal(observer.takeRecords().length,0);
  update([{...dialogs[0],text:'new',unread:29},dialogs[1],dialogs[2]]);
  assert.equal(root.children[0],a);assert.equal(root.children[1],b);assert.equal(b.querySelector('.avatar'),av);assert.equal(avatars,3);assert.equal(a.querySelector('.badge').textContent,'29');assert.equal(b.querySelector('.badge').textContent,'1000');
- assert.equal(a.querySelector('.preview').children[1],a.querySelector('.badge'));
+ assert.equal(a.querySelector('.preview').children[2],a.querySelector('.badge'));
  update([dialogs[1],dialogs[0],dialogs[2]]);assert.equal(root.children[0],b);assert.equal(root.children[1],a);
  update(dialogs,{tab:'private',connected:true});assert.equal(root.children.length,1);assert.equal(root.children[0],a);
  update(dialogs);assert.equal(root.children[1],b);assert.equal(avatars,3);observer.disconnect();

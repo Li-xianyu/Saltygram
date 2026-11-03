@@ -25,9 +25,9 @@ export function createForumTopics({host,chat,header,onSelect,onMore,onOpen=()=>{
   reconcileChildren(group.root,nodes);
   for(const [id,row]of group.rows)if(!keep.has(id)){releaseIcon(row.querySelector('.topic-avatar'));row.remove();group.rows.delete(id)}
  }
- function resize(){chat.classList.toggle('forum-expanded',expanded);trigger.hidden=!peer||desktop();if(desktop()&&picker.open)close();round.refresh({geometry:true})}
+ function resize(){const focus=!!peer&&desktop();chat.classList.toggle('forum-expanded',focus||expanded);doc.body.classList.toggle('forum-focus',focus);trigger.hidden=!peer||desktop();if(desktop()&&picker.open)close();round.refresh({geometry:true})}
  function paint(){
-  chat.classList.toggle('has-forum-topics',!!peer);host.hidden=!peer;trigger.hidden=!peer||desktop();if(!peer){if(picker.open)close();return}
+  chat.classList.toggle('has-forum-topics',!!peer);host.hidden=!peer;trigger.hidden=!peer||desktop();if(!peer){doc.body.classList.remove('forum-focus');chat.classList.remove('forum-expanded');if(picker.open)close();return}
   if(desktop())rows(groups[0]);if(picker.open)rows(groups[1]);
   const current=topics.find(t=>t.id===selected)||{id:selected,title:selected?'话题 #'+selected:'全部消息'};trigger.querySelector('.forum-current-title').textContent=current.title;trigger.setAttribute('aria-label','切换群话题：'+current.title);icon(trigger.querySelector('.topic-avatar'),current);
   for(const root of [pane,picker]){const button=root.querySelector('.forum-more');button.hidden=!more&&!error;button.disabled=busy;button.textContent=error?'重试':busy?'加载中…':'加载更多';root.querySelector('.forum-status').textContent=error||(busy&&!topics.length?'正在同步话题…':'')}
