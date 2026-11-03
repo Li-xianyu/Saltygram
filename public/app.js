@@ -102,6 +102,7 @@ const pinnedMessages=createPinnedMessages({host:$('#chatPage>.chat-header'),api:
 const aiManager=createAIManager({telegram,pickSticker:openAIStickerPicker,toast,onAccountChanged:()=>requestRecovery(0),getScale:()=>visualSettings.scale||1,onChanged:folders=>{folderUI.apply(folders);requestRecovery(0)}});
 function renderDialogs(){
  dialogs=orderDialogs(dialogs);folderUI.updateCounts();
+ for(const d of dialogs)if(d.forum&&d.topicId>0&&!d.topicTitle&&!d.topicTitleLoading){d.topicTitleLoading=true;void telegram.getTopicTitle(d.id,d.topicId).then(title=>{d.topicTitleLoading=false;if(title&&d.topicTitle!==title){d.topicTitle=title;renderDialogs()}}).catch(()=>{d.topicTitleLoading=false})}
  updateDialogList(folderUI.filter(dialogs),{active,tab,viewKey:folderUI.key(),query:$('#search').value,connected});
  roundDialogList.refresh();
  const count=String(dialogs.length),unread=String(dialogs.filter(d=>d.unread||d.unreadMark).length||'');if($('#count').textContent!==count)$('#count').textContent=count;if($('#unread').textContent!==unread)$('#unread').textContent=unread;

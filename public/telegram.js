@@ -108,7 +108,7 @@ let dialogsLoading;
 export function getDialogs(){return dialogsLoading ||= fetchDialogs().finally(()=>dialogsLoading=null)}
 async function fetchDialogs() {
   const c = await getClient(); const main=await c.getDialogs({limit:undefined,folder:0}),archived=await c.getDialogs({limit:undefined,folder:1});if(c!==client)throw Error('账号已切换');const dialogs=[...new Map([...main,...archived].map(d=>[d.id.toString(),d])).values()];
-  return dialogs.map((d,index) => { const id = d.id.toString(); peers.set(id, d.inputEntity); entities.set(id,d.entity); const photo=d.entity?.photo;const sender=d.message?.sender,senderChannel=sender&&sender.className==='Channel'&&sender.id&&sender.id.toString()!==id?{id:sender.id.toString(),title:displayName(sender),avatarKey:sender.photo?.photoId?.toString()||''}:null;if(senderChannel)entities.set(senderChannel.id,sender); return { id, pinned:!!d.dialog.pinned, pinOrder:d.dialog.pinned?index:null, folderId:d.dialog.folderId||0, contact:!!d.entity?.contact, mutedUntil:d.dialog.notifySettings?.muteUntil||0, avatarKey: photo?.photoId?.toString() || '', senderChannel, ...entityState(d.entity),title:displayName(d.entity), lastMessageId:d.message?.id, unread: d.unreadCount || 0, unreadMark:!!d.dialog.unreadMark, text: d.message?.message || serviceMessage(d.message?.action,{actor:displayName(d.message?.sender)})?.text || (d.message?.media ? ({image:'图片',video:'视频',audio:'音频',sticker:'贴纸',file:'文件'}[mediaInfo(d.message)?.kind]||'媒体') : ''), date: d.message?.date, personal: !!d.isUser&&!d.entity?.bot&&!d.entity?.self&&id!==memory.owner, bot:!!d.entity?.bot, group: d.isGroup, channel: d.isChannel, forum: !!d.entity?.forum, readState:{inbox:d.dialog.readInboxMaxId||0,outbox:d.dialog.readOutboxMaxId||0,unread:d.unreadCount||0,broadcast:!!d.entity?.broadcast,saved:id===memory.owner}, online:!!d.entity?.status&&d.entity.status.className==='UserStatusOnline'&&(!d.entity.status.expires||d.entity.status.expires>Date.now()/1000), status:d.entity?.status?{type:d.entity.status.className,wasOnline:d.entity.status.wasOnline,expires:d.entity.status.expires}:null }; });
+  return dialogs.map((d,index) => { const id = d.id.toString(); peers.set(id, d.inputEntity); entities.set(id,d.entity); const photo=d.entity?.photo;const topicId=d.message?.replyTo?.forumTopic?(d.message.replyTo.replyToTopId||d.message.replyTo.replyToMsgId||0):0; return { id, pinned:!!d.dialog.pinned, pinOrder:d.dialog.pinned?index:null, folderId:d.dialog.folderId||0, contact:!!d.entity?.contact, mutedUntil:d.dialog.notifySettings?.muteUntil||0, avatarKey: photo?.photoId?.toString() || '', topicId, ...entityState(d.entity),title:displayName(d.entity), lastMessageId:d.message?.id, unread: d.unreadCount || 0, unreadMark:!!d.dialog.unreadMark, text: d.message?.message || serviceMessage(d.message?.action,{actor:displayName(d.message?.sender)})?.text || (d.message?.media ? ({image:'图片',video:'视频',audio:'音频',sticker:'贴纸',file:'文件'}[mediaInfo(d.message)?.kind]||'媒体') : ''), date: d.message?.date, personal: !!d.isUser&&!d.entity?.bot&&!d.entity?.self&&id!==memory.owner, bot:!!d.entity?.bot, group: d.isGroup, channel: d.isChannel, forum: !!d.entity?.forum, readState:{inbox:d.dialog.readInboxMaxId||0,outbox:d.dialog.readOutboxMaxId||0,unread:d.unreadCount||0,broadcast:!!d.entity?.broadcast,saved:id===memory.owner}, online:!!d.entity?.status&&d.entity.status.className==='UserStatusOnline'&&(!d.entity.status.expires||d.entity.status.expires>Date.now()/1000), status:d.entity?.status?{type:d.entity.status.className,wasOnline:d.entity.status.wasOnline,expires:d.entity.status.expires}:null }; });
 }
 export function mediaInfo(m) {
  const page=m.media?.webpage;if(page){const preview=classifyWebPage(page);if(page.document){if(preview?.kind==='video'&&!String(page.document.mimeType||'').startsWith('video/'))return null;const media=mediaInfo({id:m.id,document:page.document});return preview?.kind==='animation'?{...media,animated:true}:media}if(preview?.kind==='image'&&page.photo)return mediaInfo({id:m.id,photo:page.photo});return null;}
@@ -294,6 +294,18 @@ export async function getTopics(id,offset={}){
  const topics=result.topics.filter(t=>t.className==='ForumTopic').map(t=>({id:t.id,title:t.title,unread:t.unreadCount||0,closed:!!t.closed,pinned:!!t.pinned,hidden:!!t.hidden,iconColor:t.iconColor||0x6fb9f0,iconEmojiId:t.iconEmojiId?.toString()==='0'?'':t.iconEmojiId?.toString()||'',date:t.date,topMessage:t.topMessage}));
  void topicDocuments(c,topics.map(t=>t.iconEmojiId).filter(Boolean)).catch(()=>{});
  return {count:result.count,topics};
+}
+const topicTitleCache=new Map();
+export async function getTopicTitle(id,topicId){
+ if(!topicId)return '';
+ const key=id+':'+topicId;
+ if(topicTitleCache.has(key))return topicTitleCache.get(key);
+ const c=await getClient();if(!peers.has(id))await getDialogs();
+ const result=await c.invoke(new Api.channels.GetForumTopicsByID({channel:peers.get(id)||id,topics:[topicId]}));
+ if(c!==client)throw Error('账号已切换');
+ const title=result.topics?.find(t=>t.id===topicId)?.title||'';
+ if(title)topicTitleCache.set(key,title);
+ return title;
 }
 const topicEmojiDocuments=new WeakMap();
 async function topicDocuments(c,ids){
